@@ -1,0 +1,278 @@
+#Team name and project title
+locals {
+  name = "m3ap-autodisc"
+}
+
+# Configure the AWS provider
+provider "aws" {
+  region  = "eu-west-2"
+  profile = "my_account"
+}
+
+# Create a default VPC for Jenkins server
+resource "aws_vpc" "vpc" {
+  cidr_block           = "10.0.0.0/16" # CIDR block for the VPC
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+  tags = {
+    Name = "${local.name}-vpc"
+  }
+}
+
+#----------------------------------------------------------------
+# Generate a new RSA private key using the TLS provider
+# this key will be used to create a public key pair for accessing the EC2 instance
+#----------------------------------------------------------------
+resource "tls_private_key" "keypair" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+#----------------------------------------------------------------
+# Create a new key pair using the AWS provider
+# the public key is derived from the private key generated above
+#----------------------------------------------------------------
+resource "aws_key_pair" "public_key" {
+  key_name   = "${local.name}-keypair"
+  public_key = tls_private_key.keypair.public_key_openssh
+}
+#----------------------------------------------------------------
+# Save the generated private key to a local PEM file
+# This file can be used for SSH access to the EC2 instance
+#----------------------------------------------------------------
+resource "local_file" "private_key" {
+  content  = tls_private_key.keypair.private_key_pem
+  filename = "${local.name}-keypair.pem"
+}
+
+# data source to fetch avaiable availability zones in the region
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+# Create a public subnet in the VPC
+resource "aws_subnet" "public_subnet" {
+  count                   = 2 # Create two public subnets
+  vpc_id                  = aws_vpc.vpc.id
+  cidr_block              = "10.0.${count.index}.0/24"                                        # CIDR block for each subnet
+  availability_zone       = element(data.aws_availability_zones.available.names, count.index) # Use different AZs
+  map_public_ip_on_launch = true                                                              # Enable public IP assignment
+  tags = {
+    Name = "${local.name}-public-subnet-${count.index + 1}"
+  }
+}
+# Create an Internet Gateway for the VPC
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.vpc.id
+  tags = {
+    Name = "${local.name}-internet-gateway"
+  }
+}
+
+# Create a route table for the public subnets
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.vpc.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+  tags = {
+    Name = "${local.name}-public-rt"
+  }
+}
+# Associate the public subnets with the route table
+resource "aws_route_table_association" "public_assoc" {
+  count          = 2
+  subnet_id      = aws_subnet.public_subnet[count.index].id
+  route_table_id = aws_route_table.public.id
+}
+
+# Fetch the latest RHEL 9 AMI in the selected region
+data "aws_ami" "latest_rhel" {
+  most_recent = true
+  owners      = ["309956199498"] # Red Hat official AWS account ID
+
+  filter {
+    name   = "name"
+    values = ["RHEL-9.*_HVM-*-x86_64-*-Hourly2-GP2"] # Pattern for RHEL 9 AMIs
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+
+  filter {
+    name   = "architecture"
+    values = ["x86_64"]
+  }
+}
+
+##############################################
+# IAM Role, Policies & Instance Profile for Jenkins EC2
+# Purpose: Allow the Jenkins EC2 instance to use AWS Systems Manager (SSM)
+# and gain administrative permissions for deployment and automation tasks.
+##############################################
+
+# -------------------------------------------------------
+# 1️⃣ Create IAM Role for Jenkins EC2 Instance
+# -------------------------------------------------------
+# This role allows the EC2 instance (Jenkins server) to assume the role
+# and interact securely with AWS services such as SSM, CloudWatch, S3, etc.
+resource "aws_iam_role" "jenkins_ssm_role" {
+  name = "${local.name}-ssm-role"
+
+  # Define who can assume this role — here, EC2 service
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = "sts:AssumeRole"
+        Principal = {
+          Service = "ec2.amazonaws.com" # EC2 instances are trusted to use this role
+        }
+      }
+    ]
+  })
+}
+
+# -------------------------------------------------------
+# 2️⃣ Attach SSM Managed Policy
+# -------------------------------------------------------
+# Grants permissions for the EC2 instance to communicate with AWS Systems Manager (SSM).
+# This allows you to connect to the instance using Session Manager instead of SSH keys.
+resource "aws_iam_role_policy_attachment" "jenkins_ssm_attachment" {
+  role       = aws_iam_role.jenkins_ssm_role.id
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# -------------------------------------------------------
+# 3️⃣ Attach AdministratorAccess Policy
+# -------------------------------------------------------
+# Provides full administrative privileges to the Jenkins instance.
+# This is useful when Jenkins needs to manage other AWS services
+# like EC2, S3, ECR, or deploy infrastructure as part of CI/CD.
+resource "aws_iam_role_policy_attachment" "jenkins_admin_attachment" {
+  role       = aws_iam_role.jenkins_ssm_role.id
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}
+
+# -------------------------------------------------------
+# 4️⃣ Create IAM Instance Profile
+# -------------------------------------------------------
+# An instance profile is required to attach an IAM role to an EC2 instance.
+# This profile wraps the IAM role and links it to the EC2 machine at launch.
+resource "aws_iam_instance_profile" "jenkins_instance_profile" {
+  name = "${local.name}-jenkins-instance-profile"
+  role = aws_iam_role.jenkins_ssm_role.name
+}
+
+# ==============================================================
+# Security Group for Jenkins Server
+# --------------------------------------------------------------
+# - Allows Jenkins web interface (port 8080) from ELB security group
+# - No direct SSH (port 22) access; use SSM instead
+# - Allows all outbound traffic
+# ==============================================================
+
+resource "aws_security_group" "jenkins_sg" {
+  name        = "${local.name}-jenkins-sg"
+  description = "Security group for Jenkins server"
+  vpc_id      = aws_vpc.vpc.id
+
+  # Inbound: Allow Jenkins web interface only from ELB
+  ingress {
+    description      = "Jenkins web interface from ELB"
+    from_port        = 8080
+    to_port          = 8080
+    protocol         = "tcp"
+    security_groups  = [aws_security_group.elb_sg.id]
+  }
+
+#   # Inbound: Optional SSH (port 22) if needed (currently open to all)
+#   ingress {
+#     description = "SSH access (optional, can be removed if using SSM only)"
+#     from_port   = 22
+#     to_port     = 22
+#     protocol    = "tcp"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
+
+  # Outbound: Allow all traffic
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Tags for identification
+  tags = {
+    Name = "${local.name}-jenkins-sg"
+  }
+}
+
+# ==============================================================
+# EC2 Instance for Jenkins Server
+# --------------------------------------------------------------
+# - Uses latest RHEL AMI from data source
+# - Placed in public subnet with security group
+# - IAM instance profile attaches SSM and admin role
+# - Uses user_data script to install Jenkins & dependencies
+# ==============================================================
+
+resource "aws_instance" "jenkins_instance" {
+  ami                         = data.aws_ami.latest_rhel.id
+  instance_type               = "t3.micro"
+  subnet_id                   = aws_subnet.public_subnet[0].id
+  vpc_security_group_ids      = [aws_security_group.jenkins_sg.id]
+  key_name                    = aws_key_pair.public_key.key_name
+  iam_instance_profile        = aws_iam_instance_profile.jenkins_instance_profile.name
+  associate_public_ip_address = true
+
+  # User data script for automatic Jenkins installation & configuration
+ # user_data = local.user_data
+
+  # Root block device configuration
+  root_block_device {
+    volume_size = 20  # 20 GB root volume
+    volume_type = "gp3"
+    encrypted   = true
+  }
+
+  # Enforce IMDSv2 for enhanced instance metadata security
+  metadata_options {
+    http_tokens = "required"
+  }
+
+  # Tags for identification
+  tags = {
+    Name = "${local.name}-jenkins-server"
+  }
+}
+
+# Security group ELB to allow HTTP traffic on port 443
+resource "aws_security_group" "elb_sg" {
+  name        = "${local.name}-elb-sg"
+  description = "Security group for ELB"
+  vpc_id      = aws_vpc.vpc.id
+  # Allow inbound traffic on port 443 for HTTPS
+  ingress {
+    description      = "Allow HTTPS traffic"
+    from_port        = 443
+    to_port          = 443
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"] # Allow from anywhere
+    }
+    
+    # Allow all outbound traffic
+    egress {
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1" # All protocols
+    cidr_blocks      = ["0.0.0.0/0"]
+  }
+    tags = {
+        Name = "${local.name}-elb-sg"
+    }   
+}
