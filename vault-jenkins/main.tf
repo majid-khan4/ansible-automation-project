@@ -3,11 +3,7 @@ locals {
   name = "m3ap-autodisc"
 }
 
-# Configure the AWS provider
-provider "aws" {
-  region  = "eu-west-2"
-  profile = "my_account"
-}
+
 
 # Create a default VPC for Jenkins server
 resource "aws_vpc" "vpc" {
@@ -223,7 +219,7 @@ resource "aws_security_group" "jenkins_sg" {
 
 resource "aws_instance" "jenkins_instance" {
   ami                         = data.aws_ami.latest_rhel.id
-  instance_type               = "t3.micro"
+  instance_type               = "t3.medium" # Suitable for Jenkins workloads    
   subnet_id                   = aws_subnet.public_subnet[0].id
   vpc_security_group_ids      = [aws_security_group.jenkins_sg.id]
   key_name                    = aws_key_pair.public_key.key_name
@@ -256,14 +252,23 @@ resource "aws_security_group" "elb_sg" {
   name        = "${local.name}-elb-sg"
   description = "Security group for ELB"
   vpc_id      = aws_vpc.vpc.id
-  # Allow inbound traffic on port 443 for HTTPS
+  # Allow inbound traffic on port 80 for HTTP (ELB frontend)
   ingress {
-    description      = "Allow HTTPS traffic"
-    from_port        = 443
-    to_port          = 443
+    description      = "Allow HTTP traffic"
+    from_port        = 80
+    to_port          = 80
     protocol         = "tcp"
     cidr_blocks      = ["0.0.0.0/0"] # Allow from anywhere
-    }
+  }
+
+  # Optional: keep HTTPS (443) open if you plan to terminate SSL on the ELB with a server cert
+  # ingress {
+  #   description      = "Allow HTTPS traffic"
+  #   from_port        = 443
+  #   to_port          = 443
+  #   protocol         = "tcp"
+  #   cidr_blocks      = ["0.0.0.0/0"]
+  # }
     
     # Allow all outbound traffic
     egress {
@@ -275,4 +280,100 @@ resource "aws_security_group" "elb_sg" {
     tags = {
         Name = "${local.name}-elb-sg"
     }   
+}
+
+# Classic Elastic Load Balancer (ELB) to distribute traffic to Jenkins instances
+resource "aws_elb" "jenkins_elb" {
+  name               = "${local.name}-elb"
+  subnets            = aws_subnet.public_subnet[*].id
+  security_groups    = [aws_security_group.elb_sg.id]
+  cross_zone_load_balancing = true
+
+  listener {
+    instance_port     = 8080
+    instance_protocol = "http"
+    lb_port           = 80
+    lb_protocol       = "http"
+  }
+
+  health_check {
+    target              = "HTTP:8080/login" # Health check endpoint for Jenkins
+    interval            = 30
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    timeout             = 5
+  }
+
+  instances = [aws_instance.jenkins_instance.id]
+
+  tags = {
+    Name = "${local.name}-elb"
+  }
+}
+# ============================================================
+# Lookup the existing Route 53 hosted zone for majiktech.uk
+# ============================================================
+data "aws_route53_zone" "majiktech_zone" {
+  name         = "majiktech.uk"
+  private_zone = false
+}
+
+# ============================================================
+# Request an ACM certificate for Jenkins subdomain
+# ============================================================
+resource "aws_acm_certificate" "jenkins_cert" {
+  domain_name       = "jenkins.majiktech.uk"      # Main domain for Jenkins
+  validation_method = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = {
+    Name = "jenkins-cert-majiktech" 
+  }
+}
+
+# ============================================================
+# Create DNS validation records in Route 53
+# ============================================================
+resource "aws_route53_record" "cert_validation" {
+  for_each = {
+    for dvo in aws_acm_certificate.jenkins_cert.domain_validation_options : dvo.domain_name => {
+      name  = dvo.resource_record_name
+      type  = dvo.resource_record_type
+      value = dvo.resource_record_value
+    }
+  }
+
+  zone_id = data.aws_route53_zone.majiktech_zone.zone_id
+  name    = each.value.name
+  type    = each.value.type
+  ttl     = 300
+  records = [each.value.value]
+}
+
+# ============================================================
+# Validate the ACM certificate after DNS records are created
+# ============================================================
+resource "aws_acm_certificate_validation" "jenkins_cert_validation" {
+  certificate_arn         = aws_acm_certificate.jenkins_cert.arn
+  validation_record_fqdns = [for r in aws_route53_record.cert_validation : r.fqdn]
+}
+
+# ============================================================
+# Create a Route 53 Alias record for the Jenkins domain
+# ============================================================
+resource "aws_route53_record" "jenkins_alias" {
+  zone_id = data.aws_route53_zone.majiktech_zone.zone_id
+  name    = "jenkins.majiktech.uk"
+  type    = "A"
+
+  alias {
+    name                   = aws_elb.jenkins_elb.dns_name
+    zone_id                = aws_elb.jenkins_elb.zone_id
+    evaluate_target_health = true
+  }
+
+  depends_on = [aws_acm_certificate_validation.jenkins_cert_validation]
 }
