@@ -1,6 +1,6 @@
 #Team name and project title
 locals {
-  name = "m3ap-autodisc"
+  name = "m3ap"
 }
 
 
@@ -219,7 +219,7 @@ resource "aws_security_group" "jenkins_sg" {
 
 resource "aws_instance" "jenkins_instance" {
   ami                         = data.aws_ami.latest_rhel.id
-  instance_type               = "t3.medium" # Suitable for Jenkins workloads    
+  instance_type               = var.jenkins_instance_type # Suitable for Jenkins workloads    
   subnet_id                   = aws_subnet.public_subnet[0].id
   vpc_security_group_ids      = [aws_security_group.jenkins_sg.id]
   key_name                    = aws_key_pair.public_key.key_name
@@ -227,7 +227,13 @@ resource "aws_instance" "jenkins_instance" {
   associate_public_ip_address = true
 
   # User data script for automatic Jenkins installation & configuration
- # user_data = local.user_data
+  user_data = templatefile("${path.module}/jenkins-userdata.sh", {
+    region            = var.aws_region
+    nexus_registry    = var.nexus_registry
+    nexus_username    = var.nexus_username
+    nexus_password    = var.nexus_password
+    newrelic_license  = var.newrelic_license
+  })
 
   # Root block device configuration
   root_block_device {
@@ -376,4 +382,212 @@ resource "aws_route53_record" "jenkins_alias" {
   }
 
   depends_on = [aws_acm_certificate_validation.jenkins_cert_validation]
+}
+
+/* -------------------------------------------------------
+   Vault server + ELB
+   - Ubuntu AMI data source
+   - IAM role/profile for EC2 (SSM + KMS policy)
+   - Security groups for Vault and Vault ELB
+   - EC2 instance (vault-server)
+   - Classic ELB in front of Vault
+   - Route53 record for Vault
+   ------------------------------------------------------- */
+
+# Fetch latest Ubuntu 22.04 LTS AMI
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+
+  filter {
+    name   = "architecture"
+    values = ["x86_64"]
+  }
+}
+
+# IAM role for Vault EC2 instance
+resource "aws_iam_role" "vault_ec2_role" {
+  name = "${local.name}-vault-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = "sts:AssumeRole"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# Attach SSM managed policy so instance can be managed via Session Manager
+resource "aws_iam_role_policy_attachment" "vault_ssm_attachment" {
+  role       = aws_iam_role.vault_ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# KMS policy for Vault (basic set of operations) - scope as needed
+resource "aws_iam_policy" "vault_kms_policy" {
+  name        = "${local.name}-vault-kms-policy"
+  description = "Allow KMS operations needed by Vault"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Sid = "AllowKMSUse"
+        Effect = "Allow"
+        Action = [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:GenerateDataKey*",
+          "kms:DescribeKey"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Attach the KMS policy to the EC2 role
+resource "aws_iam_role_policy_attachment" "vault_kms_attach" {
+  role       = aws_iam_role.vault_ec2_role.name
+  policy_arn = aws_iam_policy.vault_kms_policy.arn
+}
+
+# Instance profile for Vault EC2
+resource "aws_iam_instance_profile" "vault_instance_profile" {
+  name = "${local.name}-vault-instance-profile"
+  role = aws_iam_role.vault_ec2_role.name
+}
+
+# Security group for Vault EC2 instance (allow 8200 from ELB only)
+resource "aws_security_group" "vault_sg" {
+  name        = "${local.name}-vault-sg"
+  description = "Security group for Vault server"
+  vpc_id      = aws_vpc.vpc.id
+
+  ingress {
+    description     = "Vault API from ELB"
+    from_port       = 8200
+    to_port         = 8200
+    protocol        = "tcp"
+    security_groups = [aws_security_group.vault_elb_sg.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${local.name}-vault-sg"
+  }
+}
+
+# Security group for Vault ELB (allow incoming 8200)
+resource "aws_security_group" "vault_elb_sg" {
+  name        = "${local.name}-vault-elb-sg"
+  description = "Security group for Vault ELB"
+  vpc_id      = aws_vpc.vpc.id
+
+  ingress {
+    description = "Allow Vault traffic"
+    from_port   = 8200
+    to_port     = 8200
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${local.name}-vault-elb-sg"
+  }
+}
+
+# Vault EC2 instance
+resource "aws_instance" "vault_server" {
+  ami                         = data.aws_ami.ubuntu.id
+  instance_type               = "t2.medium"
+  subnet_id                   = aws_subnet.public_subnet[0].id
+  vpc_security_group_ids      = [aws_security_group.vault_sg.id]
+  key_name                    = aws_key_pair.public_key.key_name
+  iam_instance_profile        = aws_iam_instance_profile.vault_instance_profile.name
+  associate_public_ip_address = true
+
+  root_block_device {
+    volume_size = 20
+    volume_type = "gp3"
+    encrypted   = true
+  }
+
+  metadata_options {
+    http_tokens = "required"
+  }
+
+  tags = {
+    Name = "${local.name}-vault-server"
+  }
+}
+
+# Classic ELB for Vault
+resource "aws_elb" "vault_elb" {
+  name    = "${local.name}-vault-elb"
+  subnets = aws_subnet.public_subnet[*].id
+  security_groups = [aws_security_group.vault_elb_sg.id]
+
+  listener {
+    instance_port     = 8200
+    instance_protocol = "tcp"
+    lb_port           = 8200
+    lb_protocol       = "tcp"
+  }
+
+  health_check {
+    target              = "TCP:8200"
+    interval            = 30
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    timeout             = 5
+  }
+
+  instances = [aws_instance.vault_server.id]
+
+  tags = {
+    Name = "${local.name}-vault-elb"
+  }
+}
+
+# Route53 record for Vault
+resource "aws_route53_record" "vault_alias" {
+  zone_id = data.aws_route53_zone.majiktech_zone.zone_id
+  name    = var.vault_domain
+  type    = "A"
+
+  alias {
+    name                   = aws_elb.vault_elb.dns_name
+    zone_id                = aws_elb.vault_elb.zone_id
+    evaluate_target_health = true
+  }
 }
