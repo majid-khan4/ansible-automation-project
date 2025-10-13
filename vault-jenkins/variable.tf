@@ -78,3 +78,41 @@ variable "vault_instance_type" {
   type        = string
   default     = "t2.medium"
 }
+
+variable "vault_version" {
+  description = "Vault binary version to install in userdata"
+  type        = string
+  default     = "1.18.3"
+}
+
+variable "vault_root_token" {
+  description = "Initial root token for dev Vault instance (for demo only). Provide a secure token in production via secure mechanisms."
+  type        = string
+  sensitive   = true
+  default     = "root-token-demo"
+}
+
+variable "vault_db_username" {
+  description = "Database username to store in Vault"
+  type        = string
+  default     = "dbuser"
+}
+
+variable "vault_db_password" {
+  description = "Database password to store in Vault"
+  type        = string
+  sensitive   = true
+  default     = "dbpass"
+}
+
+variable "vault_db_host" {
+  description = "Database host to store in Vault"
+  type        = string
+  default     = "db.internal.local"
+}
+
+variable "vault_db_name" {
+  description = "Database name to store in Vault"
+  type        = string
+  default     = "exampledb"
+}

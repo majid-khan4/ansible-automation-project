@@ -529,12 +529,18 @@ resource "aws_security_group" "vault_elb_sg" {
 # Vault EC2 instance
 resource "aws_instance" "vault_server" {
   ami                         = data.aws_ami.ubuntu.id
-  instance_type               = "t2.medium"
+  instance_type               = var.vault_instance_type
   subnet_id                   = aws_subnet.public_subnet[0].id
   vpc_security_group_ids      = [aws_security_group.vault_sg.id]
   key_name                    = aws_key_pair.public_key.key_name
   iam_instance_profile        = aws_iam_instance_profile.vault_instance_profile.name
   associate_public_ip_address = true
+
+  user_data = templatefile("${path.module}/vault-userdata.sh", {
+    region = var.aws_region
+    key    = aws_kms_key.vault_kms.arn
+    "VAULT_VERSION" = var.vault_version
+  })
 
   root_block_device {
     volume_size = 20
@@ -590,4 +596,25 @@ resource "aws_route53_record" "vault_alias" {
     zone_id                = aws_elb.vault_elb.zone_id
     evaluate_target_health = true
   }
+}
+
+/* Backend & Auto-unseal resources for Vault */
+
+# KMS key for auto-unseal
+resource "aws_kms_key" "vault_kms" {
+  description             = "KMS key for Vault auto-unseal"
+  deletion_window_in_days = 7
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Sid = "Enable IAM users to use the key"
+        Effect = "Allow"
+        Principal = { AWS = "*" }
+        Action = "kms:*"
+        Resource = "*"
+      }
+    ]
+  })
 }
