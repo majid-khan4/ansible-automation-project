@@ -1,68 +1,57 @@
 #!/bin/bash
 set -e
 
-# ==============================
-# System preparation
-# ==============================
-apt update -y
-apt upgrade -y
-apt install -y unzip jq curl wget lsb-release apt-transport-https gpg
+apt install -y unzip jq
 
-# ==============================
-# Install Vault (Latest Stable Version)
-# ==============================
+# Define Vault version
 VAULT_VERSION="1.18.3"
-echo "Installing Vault ${VAULT_VERSION}..."
 
 # Download Vault binary
-wget https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip
+wget https://releases.hashicorp.com/vault/"${VAULT_VERSION}"/vault_"${VAULT_VERSION}"_linux_amd64.zip
 
-# Unzip and move Vault to PATH
-unzip vault_${VAULT_VERSION}_linux_amd64.zip
+# Unzip the Vault binary
+unzip vault_"${VAULT_VERSION}"_linux_amd64.zip
+
+# Move the binary to /usr/local/bin
 sudo mv vault /usr/local/bin/
+
+# Set ownership and permissions
 sudo chown root:root /usr/local/bin/vault
 sudo chmod 0755 /usr/local/bin/vault
 
-# Verify installation
-vault --version
-
-# ==============================
 # Create Vault user and directories
-# ==============================
 sudo useradd --system --home /etc/vault.d --shell /bin/false vault
-sudo mkdir -p /etc/vault.d /var/lib/vault
-sudo chown -R vault:vault /etc/vault.d /var/lib/vault
+sudo mkdir --parents /etc/vault.d
+sudo mkdir --parents /var/lib/vault
+sudo chown --recursive vault:vault /etc/vault.d /var/lib/vault
 
-# ==============================
-# Vault configuration file
-# ==============================
+# Create Vault configuration file
 cat <<EOF | sudo tee /etc/vault.d/vault.hcl
 storage "file" {
-  path = "/var/lib/vault"
+    path = "/var/lib/vault"
 }
 
 listener "tcp" {
-  address     = "0.0.0.0:8200"
-  tls_disable = 1
+    address     = "0.0.0.0:8200"
+    tls_disable = 1
 }
 
 seal "awskms" {
-  region     = "${region}"
-  kms_key_id = "${key}"
+    region = "${region}"
+    kms_key_id = "${key}"
 }
 
 ui = true
 EOF
 
+# Set permissions for the configuration file
 sudo chown vault:vault /etc/vault.d/vault.hcl
 sudo chmod 640 /etc/vault.d/vault.hcl
 
-# ==============================
-# Create systemd service
-# ==============================
+# Create systemd service file for Vault
 cat <<EOF | sudo tee /etc/systemd/system/vault.service
 [Unit]
-Description=HashiCorp Vault - Secrets Management
+Description=HashiCorp Vault - A tool for managing secrets
 Documentation=https://www.vaultproject.io/docs/
 Requires=network-online.target
 After=network-online.target
@@ -93,42 +82,37 @@ LimitMEMLOCK=infinity
 WantedBy=multi-user.target
 EOF
 
+# Reload systemd to recognize the new service
 sudo systemctl daemon-reload
+
+# Wait for Vault to start
+sleep 5
+
+# create a variable for the vault URL
+export VAULT_ADDR='http://localhost:8200'
+cat <<EOT > /etc/profile.d/vault.sh
+export VAULT_ADDR='http://localhost:8200'
+export VAULT_SKIP_VERIFY=true
+EOT
+
+# Enable and start the Vault service
 sudo systemctl enable vault
 sudo systemctl start vault
 
-# ==============================
-# Configure environment
-# ==============================
-export VAULT_ADDR='http://127.0.0.1:8200'
-echo "export VAULT_ADDR='http://127.0.0.1:8200'" | sudo tee /etc/profile.d/vault.sh
-echo "export VAULT_SKIP_VERIFY=true" | sudo tee -a /etc/profile.d/vault.sh
-
-# Wait for Vault to initialize
 sleep 20
 
-# ==============================
-# Initialize and unseal Vault
-# ==============================
-vault operator init -key-shares=1 -key-threshold=1 > /home/ubuntu/vault_init.log
+# Initialize the vault server
+touch /home/ubuntu/vault_init.log
+vault operator init > /home/ubuntu/vault_init.log
 grep -o 'hvs\.[A-Za-z0-9]\{24\}' /home/ubuntu/vault_init.log > /home/ubuntu/token.txt
-TOKEN=$(cat /home/ubuntu/token.txt)
+TOKEN=$(</home/ubuntu/token.txt)
 
-# Login
+# Login to Vault
 vault login $TOKEN
 
-# ==============================
-# Enable KV secrets engine and save DB credentials
-# ==============================
-vault secrets enable -path=secret kv
+# create secret engine and store secrets for the application database
+vault secrets enable -path=secret/ kv #directory to store secrets on the vault server
+vault kv put secret/database username=petclinic password=petclinic
 
-# Store database credentials securely in Vault
-vault kv put secret/database username="petclinic" password="petclinic"
-
-# ==============================
-# Verification and Final Steps
-# ==============================
-vault status
+# Set hostname to Vault
 sudo hostnamectl set-hostname Vault
-
-echo "✅ Vault installation and configuration complete."
