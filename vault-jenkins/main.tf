@@ -178,21 +178,21 @@ resource "aws_security_group" "jenkins_sg" {
 
   # Inbound: Allow Jenkins web interface only from ELB
   ingress {
-    description      = "Jenkins web interface from ELB"
-    from_port        = 8080
-    to_port          = 8080
-    protocol         = "tcp"
-    security_groups  = [aws_security_group.elb_sg.id]
+    description     = "Jenkins web interface from ELB"
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = "tcp"
+    security_groups = [aws_security_group.elb_sg.id]
   }
 
-#   # Inbound: Optional SSH (port 22) if needed (currently open to all)
-#   ingress {
-#     description = "SSH access (optional, can be removed if using SSM only)"
-#     from_port   = 22
-#     to_port     = 22
-#     protocol    = "tcp"
-#     cidr_blocks = ["0.0.0.0/0"]
-#   }
+  #   # Inbound: Optional SSH (port 22) if needed (currently open to all)
+  #   ingress {
+  #     description = "SSH access (optional, can be removed if using SSM only)"
+  #     from_port   = 22
+  #     to_port     = 22
+  #     protocol    = "tcp"
+  #     cidr_blocks = ["0.0.0.0/0"]
+  #   }
 
   # Outbound: Allow all traffic
   egress {
@@ -228,16 +228,16 @@ resource "aws_instance" "jenkins_instance" {
 
   # User data script for automatic Jenkins installation & configuration
   user_data = templatefile("${path.module}/jenkins-userdata.sh", {
-    region            = var.aws_region
-    nexus_registry    = var.nexus_registry
-    nexus_username    = var.nexus_username
-    nexus_password    = var.nexus_password
-    newrelic_license  = var.newrelic_license
+    region           = var.aws_region
+    nexus_registry   = var.nexus_registry
+    nexus_username   = var.nexus_username
+    nexus_password   = var.nexus_password
+    newrelic_license = var.newrelic_license
   })
 
   # Root block device configuration
   root_block_device {
-    volume_size = 20  # 20 GB root volume
+    volume_size = 20 # 20 GB root volume
     volume_type = "gp3"
     encrypted   = true
   }
@@ -260,11 +260,11 @@ resource "aws_security_group" "elb_sg" {
   vpc_id      = aws_vpc.vpc.id
   # Allow inbound traffic on port 80 for HTTP (ELB frontend)
   ingress {
-    description      = "Allow HTTP traffic"
-    from_port        = 80
-    to_port          = 80
-    protocol         = "tcp"
-    cidr_blocks      = ["0.0.0.0/0"] # Allow from anywhere
+    description = "Allow HTTP traffic"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # Allow from anywhere
   }
 
   # Optional: keep HTTPS (443) open if you plan to terminate SSL on the ELB with a server cert
@@ -275,31 +275,32 @@ resource "aws_security_group" "elb_sg" {
   #   protocol         = "tcp"
   #   cidr_blocks      = ["0.0.0.0/0"]
   # }
-    
-    # Allow all outbound traffic
-    egress {
-    from_port        = 0
-    to_port          = 0
-    protocol         = "-1" # All protocols
-    cidr_blocks      = ["0.0.0.0/0"]
+
+  # Allow all outbound traffic
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1" # All protocols
+    cidr_blocks = ["0.0.0.0/0"]
   }
-    tags = {
-        Name = "${local.name}-elb-sg"
-    }   
+  tags = {
+    Name = "${local.name}-elb-sg"
+  }
 }
 
 # Classic Elastic Load Balancer (ELB) to distribute traffic to Jenkins instances
 resource "aws_elb" "jenkins_elb" {
-  name               = "${local.name}-elb"
-  subnets            = aws_subnet.public_subnet[*].id
-  security_groups    = [aws_security_group.elb_sg.id]
+  name                      = "${local.name}-elb"
+  subnets                   = aws_subnet.public_subnet[*].id
+  security_groups           = [aws_security_group.elb_sg.id]
   cross_zone_load_balancing = true
 
   listener {
     instance_port     = 8080
     instance_protocol = "http"
-    lb_port           = 80
-    lb_protocol       = "http"
+    lb_port           = 443
+    lb_protocol       = "https"
+    ssl_certificate_id = aws_acm_certificate.jenkins_cert.arn
   }
 
   health_check {
@@ -328,7 +329,9 @@ data "aws_route53_zone" "majiktech_zone" {
 # Request an ACM certificate for Jenkins subdomain
 # ============================================================
 resource "aws_acm_certificate" "jenkins_cert" {
-  domain_name       = "jenkins.majiktech.uk"      # Main domain for Jenkins
+  # Request certificate for apex domain and include wildcard as SAN
+  domain_name       = "majiktech.uk"
+  subject_alternative_names = ["*.majiktech.uk"]
   validation_method = "DNS"
 
   lifecycle {
@@ -336,7 +339,7 @@ resource "aws_acm_certificate" "jenkins_cert" {
   }
 
   tags = {
-    Name = "jenkins-cert-majiktech" 
+    Name = "jenkins-cert-majiktech"
   }
 }
 
@@ -448,7 +451,7 @@ resource "aws_iam_policy" "vault_kms_policy" {
     Version = "2012-10-17",
     Statement = [
       {
-        Sid = "AllowKMSUse"
+        Sid    = "AllowKMSUse"
         Effect = "Allow"
         Action = [
           "kms:Encrypt",
@@ -508,8 +511,8 @@ resource "aws_security_group" "vault_elb_sg" {
 
   ingress {
     description = "Allow Vault traffic"
-    from_port   = 8200
-    to_port     = 8200
+    from_port   = 443 # Changed to 443 for HTTPS
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -537,8 +540,8 @@ resource "aws_instance" "vault_server" {
   associate_public_ip_address = true
 
   user_data = templatefile("${path.module}/vault-userdata.sh", {
-    region = var.aws_region
-    key    = aws_kms_key.vault_kms.arn
+    region          = var.aws_region
+    key             = aws_kms_key.vault_kms.arn
     "VAULT_VERSION" = var.vault_version
   })
 
@@ -559,15 +562,16 @@ resource "aws_instance" "vault_server" {
 
 # Classic ELB for Vault
 resource "aws_elb" "vault_elb" {
-  name    = "${local.name}-vault-elb"
-  subnets = aws_subnet.public_subnet[*].id
+  name            = "${local.name}-vault-elb"
+  subnets         = aws_subnet.public_subnet[*].id
   security_groups = [aws_security_group.vault_elb_sg.id]
 
   listener {
     instance_port     = 8200
-    instance_protocol = "tcp"
-    lb_port           = 8200
-    lb_protocol       = "tcp"
+    instance_protocol = "http"
+    lb_port           = 443
+    lb_protocol       = "https"
+    ssl_certificate_id = aws_acm_certificate.jenkins_cert.arn
   }
 
   health_check {
@@ -596,6 +600,8 @@ resource "aws_route53_record" "vault_alias" {
     zone_id                = aws_elb.vault_elb.zone_id
     evaluate_target_health = true
   }
+  depends_on = [aws_acm_certificate_validation.jenkins_cert_validation]
+
 }
 
 /* Backend & Auto-unseal resources for Vault */
@@ -609,11 +615,11 @@ resource "aws_kms_key" "vault_kms" {
     Version = "2012-10-17",
     Statement = [
       {
-        Sid = "Enable IAM users to use the key"
-        Effect = "Allow"
+        Sid       = "Enable IAM users to use the key"
+        Effect    = "Allow"
         Principal = { AWS = "*" }
-        Action = "kms:*"
-        Resource = "*"
+        Action    = "kms:*"
+        Resource  = "*"
       }
     ]
   })

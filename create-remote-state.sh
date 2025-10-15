@@ -33,11 +33,11 @@ echo "Versioning enabled"
 # =========================
 # Run Terraform workflow
 # =========================
-# cd jenkins 
+cd vault-jenkins 
 
-# terraform init 
+terraform init 
 
-# terraform fmt --recursive
-# terraform apply -auto-approve
+terraform fmt --recursive
+terraform apply -auto-approve
 
 echo "Terraform state bucket configured and Terraform applied successfully!"

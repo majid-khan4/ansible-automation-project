@@ -2,11 +2,11 @@
 set -e
 
 # Run Terraform destroy for the jenkins module
-# cd jenkins
-# terraform init
-# terraform destroy -auto-approve
+cd vault-jenkins
+terraform init
+terraform destroy -auto-approve
 
-# echo "creating S3 bucket"
+echo "creating S3 bucket"
 
 # Using the same variables as ones used for creation
 BUCKET_NAME="m3ap-remote-state-1"
