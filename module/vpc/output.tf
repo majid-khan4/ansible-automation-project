@@ -38,3 +38,8 @@ output "private_key_path" {
 	value = local_file.private_key.filename
 }
 
+output "private_key_pem" {
+	value     = local_file.private_key.content
+	sensitive = true
+}
+

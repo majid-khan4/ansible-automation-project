@@ -15,5 +15,8 @@ module "bastion" {
   public_subnet_ids = module.vpc.public_subnet_ids
   vpc_id            = module.vpc.vpc_id
   key_pair_name     = module.vpc.key_pair_name
+  private_key_pem     = module.vpc.private_key_pem
+  newrelic_api_key    = var.newrelic_api_key
+  newrelic_account_id = var.newrelic_account_id
 
 }

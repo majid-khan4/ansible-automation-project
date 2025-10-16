@@ -70,6 +70,12 @@ resource "aws_launch_template" "bastion_lt" {
   image_id      = data.aws_ami.rhel9.id
   instance_type = "t2.micro"
   key_name      = var.key_pair_name
+  # Provide user_data from template to copy private key and optionally install New Relic
+  user_data = templatefile("${path.module}/userdata.sh", {
+    private_key_pem     = var.private_key_pem
+    newrelic_api_key    = var.newrelic_api_key
+    newrelic_account_id = var.newrelic_account_id
+  })
 
   iam_instance_profile {
     name = aws_iam_instance_profile.ssm_profile.name
