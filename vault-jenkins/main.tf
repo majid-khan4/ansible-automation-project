@@ -255,7 +255,7 @@ resource "aws_instance" "jenkins_instance" {
 
 # Security group ELB to allow HTTP traffic on port 443
 resource "aws_security_group" "elb_sg" {
-  name        = "${local.name}-elb-sg"
+  name        = "${local.name}-jenkins-elb-sg"
   description = "Security group for ELB"
   vpc_id      = aws_vpc.vpc.id
   # Allow inbound traffic on port 80 for HTTP (ELB frontend)
@@ -290,16 +290,16 @@ resource "aws_security_group" "elb_sg" {
 
 # Classic Elastic Load Balancer (ELB) to distribute traffic to Jenkins instances
 resource "aws_elb" "jenkins_elb" {
-  name                      = "${local.name}-elb"
+  name                      = "${local.name}-jenkins-elb"
   subnets                   = aws_subnet.public_subnet[*].id
   security_groups           = [aws_security_group.elb_sg.id]
   cross_zone_load_balancing = true
 
   listener {
-    instance_port     = 8080
-    instance_protocol = "http"
-    lb_port           = 443
-    lb_protocol       = "https"
+    instance_port      = 8080
+    instance_protocol  = "http"
+    lb_port            = 80
+    lb_protocol        = "http"
     ssl_certificate_id = aws_acm_certificate.jenkins_cert.arn
   }
 
@@ -314,7 +314,7 @@ resource "aws_elb" "jenkins_elb" {
   instances = [aws_instance.jenkins_instance.id]
 
   tags = {
-    Name = "${local.name}-elb"
+    Name = "${local.name}-jenkins-elb"
   }
 }
 # ============================================================
@@ -330,9 +330,9 @@ data "aws_route53_zone" "majiktech_zone" {
 # ============================================================
 resource "aws_acm_certificate" "jenkins_cert" {
   # Request certificate for apex domain and include wildcard as SAN
-  domain_name       = "majiktech.uk"
+  domain_name               = "majiktech.uk"
   subject_alternative_names = ["*.majiktech.uk"]
-  validation_method = "DNS"
+  validation_method         = "DNS"
 
   lifecycle {
     create_before_destroy = true
@@ -355,11 +355,12 @@ resource "aws_route53_record" "cert_validation" {
     }
   }
 
-  zone_id = data.aws_route53_zone.majiktech_zone.zone_id
-  name    = each.value.name
-  type    = each.value.type
-  ttl     = 300
-  records = [each.value.value]
+  zone_id         = data.aws_route53_zone.majiktech_zone.zone_id
+  name            = each.value.name
+  type            = each.value.type
+  ttl             = 300
+  records         = [each.value.value]
+  allow_overwrite = true
 }
 
 # ============================================================
@@ -565,17 +566,20 @@ resource "aws_elb" "vault_elb" {
   name            = "${local.name}-vault-elb"
   subnets         = aws_subnet.public_subnet[*].id
   security_groups = [aws_security_group.vault_elb_sg.id]
+  depends_on      = [aws_acm_certificate_validation.jenkins_cert_validation]
 
   listener {
-    instance_port     = 8200
-    instance_protocol = "http"
-    lb_port           = 443
-    lb_protocol       = "https"
+    instance_port      = 8200
+    instance_protocol  = "http"
+    lb_port            = 80
+    lb_protocol        = "http"
     ssl_certificate_id = aws_acm_certificate.jenkins_cert.arn
   }
 
   health_check {
-    target              = "TCP:8200"
+    # Use Vault HTTP health endpoint so ELB can correctly evaluate service health.
+    # We include standbyok and perfstandbyok so standby & performance standby nodes are treated as healthy for routing purposes.
+    target              = "HTTP:8200/v1/sys/health?standbyok=true&perfstandbyok=true"
     interval            = 30
     healthy_threshold   = 2
     unhealthy_threshold = 2
