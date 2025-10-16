@@ -42,6 +42,33 @@ NR_CONF
   systemctl start newrelic-infra || true
 fi
 
+# Install and start Amazon SSM Agent (ensures instance can register with Systems Manager)
+# Try package manager first; if that fails, download the RPM for the instance region and install.
+if ! systemctl is-active --quiet amazon-ssm-agent; then
+  echo "[bastion-userdata] Installing amazon-ssm-agent"
+  if ! yum install -y amazon-ssm-agent; then
+    # Determine region from instance identity document
+  REGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | grep region | awk -F'"' '{print $4}' || true)
+    if [ -z "$REGION" ]; then
+      REGION="eu-west-2"
+    fi
+  SSM_RPM_URL="https://s3.$${REGION}.amazonaws.com/amazon-ssm-$${REGION}/latest/linux_amd64/amazon-ssm-agent.rpm"
+  echo "[bastion-userdata] Downloading amazon-ssm-agent from $SSM_RPM_URL"
+    curl -fsSL -o /tmp/amazon-ssm-agent.rpm "$SSM_RPM_URL" || true
+    if [ -f /tmp/amazon-ssm-agent.rpm ]; then
+      rpm -Uvh /tmp/amazon-ssm-agent.rpm || true
+    fi
+  fi
+
+  # Enable and start the service
+  systemctl enable amazon-ssm-agent || true
+  systemctl start amazon-ssm-agent || true
+  echo "[bastion-userdata] amazon-ssm-agent status: $(systemctl is-active amazon-ssm-agent || true)"
+fi
+
+# Wait briefly for SSM agent to register (non-blocking logging)
+sleep 5
+
 # Owner / Permissions final check
 chown -R ec2-user:ec2-user /home/ec2-user
 

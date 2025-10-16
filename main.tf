@@ -20,3 +20,16 @@ module "bastion" {
   newrelic_account_id = var.newrelic_account_id
 
 }
+
+module "nexus" {
+  source     = "./module/nexus"
+  name       = "nexus"
+  vpc_id     = module.vpc.vpc_id
+  vpc_cidr   = "10.0.0.0/16"
+  subnet_ids = module.vpc.public_subnet_ids
+  key_name   = module.vpc.key_pair_name
+  # instance_type can be overridden here if needed
+  # Replace the following with your real Route53 hosted zone and desired subdomain
+  domain     = "majiktech.uk"
+  subdomain  = "nexus.majiktech.uk"
+}
