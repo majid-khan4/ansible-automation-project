@@ -1,7 +1,7 @@
 # Provider block moved here so it's in the dedicated provider file.
 provider "aws" {
   region  = "eu-west-2"
-  profile = "my_account"
+  profile = "personal_account"
 }
 
 terraform {
@@ -11,6 +11,6 @@ terraform {
     encrypt      = true
     use_lockfile = true
     region       = "eu-west-2"
-    profile      = "my_account"
+    profile      = "personal_account"
   }
 }

@@ -11,7 +11,7 @@ echo "creating S3 bucket"
 # Using the same variables as ones used for creation
 BUCKET_NAME="m3ap-remote-state-1"
 AWS_REGION="eu-west-2"
-AWS_PROFILE="my_account"
+AWS_PROFILE="personal_account"
 
 echo "Deleting all objects in $BUCKET_NAME. This process is irreversible..."
 

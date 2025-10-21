@@ -6,7 +6,7 @@ set -e
 # =========================
 BUCKET_NAME="m3ap-remote-state-1" # Change this to a globally unique name
 AWS_REGION="eu-west-2"
-AWS_PROFILE="my_account"
+AWS_PROFILE="personal_account"
 
 echo "Creating Terraform state bucket: $BUCKET_NAME in region: $AWS_REGION (profile: $AWS_PROFILE)"
 

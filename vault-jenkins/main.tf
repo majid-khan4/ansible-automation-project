@@ -15,26 +15,20 @@ resource "aws_vpc" "vpc" {
   }
 }
 
-#----------------------------------------------------------------
+
 # Generate a new RSA private key using the TLS provider
-# this key will be used to create a public key pair for accessing the EC2 instance
-#----------------------------------------------------------------
 resource "tls_private_key" "keypair" {
   algorithm = "RSA"
   rsa_bits  = 4096
 }
-#----------------------------------------------------------------
+
 # Create a new key pair using the AWS provider
-# the public key is derived from the private key generated above
-#----------------------------------------------------------------
 resource "aws_key_pair" "public_key" {
   key_name   = "${local.name}-keypair"
   public_key = tls_private_key.keypair.public_key_openssh
 }
-#----------------------------------------------------------------
+
 # Save the generated private key to a local PEM file
-# This file can be used for SSH access to the EC2 instance
-#----------------------------------------------------------------
 resource "local_file" "private_key" {
   content  = tls_private_key.keypair.private_key_pem
   filename = "${local.name}-keypair.pem"
@@ -103,17 +97,7 @@ data "aws_ami" "latest_rhel" {
   }
 }
 
-##############################################
-# IAM Role, Policies & Instance Profile for Jenkins EC2
-# Purpose: Allow the Jenkins EC2 instance to use AWS Systems Manager (SSM)
-# and gain administrative permissions for deployment and automation tasks.
-##############################################
-
-# -------------------------------------------------------
 # 1️⃣ Create IAM Role for Jenkins EC2 Instance
-# -------------------------------------------------------
-# This role allows the EC2 instance (Jenkins server) to assume the role
-# and interact securely with AWS services such as SSM, CloudWatch, S3, etc.
 resource "aws_iam_role" "jenkins_ssm_role" {
   name = "${local.name}-ssm-role"
 
@@ -132,45 +116,25 @@ resource "aws_iam_role" "jenkins_ssm_role" {
   })
 }
 
-# -------------------------------------------------------
 # 2️⃣ Attach SSM Managed Policy
-# -------------------------------------------------------
-# Grants permissions for the EC2 instance to communicate with AWS Systems Manager (SSM).
-# This allows you to connect to the instance using Session Manager instead of SSH keys.
 resource "aws_iam_role_policy_attachment" "jenkins_ssm_attachment" {
   role       = aws_iam_role.jenkins_ssm_role.id
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-# -------------------------------------------------------
 # 3️⃣ Attach AdministratorAccess Policy
-# -------------------------------------------------------
-# Provides full administrative privileges to the Jenkins instance.
-# This is useful when Jenkins needs to manage other AWS services
-# like EC2, S3, ECR, or deploy infrastructure as part of CI/CD.
 resource "aws_iam_role_policy_attachment" "jenkins_admin_attachment" {
   role       = aws_iam_role.jenkins_ssm_role.id
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
-# -------------------------------------------------------
 # 4️⃣ Create IAM Instance Profile
-# -------------------------------------------------------
-# An instance profile is required to attach an IAM role to an EC2 instance.
-# This profile wraps the IAM role and links it to the EC2 machine at launch.
 resource "aws_iam_instance_profile" "jenkins_instance_profile" {
   name = "${local.name}-jenkins-instance-profile"
   role = aws_iam_role.jenkins_ssm_role.name
 }
 
-# ==============================================================
 # Security Group for Jenkins Server
-# --------------------------------------------------------------
-# - Allows Jenkins web interface (port 8080) from ELB security group
-# - No direct SSH (port 22) access; use SSM instead
-# - Allows all outbound traffic
-# ==============================================================
-
 resource "aws_security_group" "jenkins_sg" {
   name        = "${local.name}-jenkins-sg"
   description = "Security group for Jenkins server"
@@ -184,15 +148,6 @@ resource "aws_security_group" "jenkins_sg" {
     protocol        = "tcp"
     security_groups = [aws_security_group.elb_sg.id]
   }
-
-  #   # Inbound: Optional SSH (port 22) if needed (currently open to all)
-  #   ingress {
-  #     description = "SSH access (optional, can be removed if using SSM only)"
-  #     from_port   = 22
-  #     to_port     = 22
-  #     protocol    = "tcp"
-  #     cidr_blocks = ["0.0.0.0/0"]
-  #   }
 
   # Outbound: Allow all traffic
   egress {
@@ -208,18 +163,11 @@ resource "aws_security_group" "jenkins_sg" {
   }
 }
 
-# ==============================================================
-# EC2 Instance for Jenkins Server
-# --------------------------------------------------------------
-# - Uses latest RHEL AMI from data source
-# - Placed in public subnet with security group
-# - IAM instance profile attaches SSM and admin role
-# - Uses user_data script to install Jenkins & dependencies
-# ==============================================================
+#create Jenkins EC2 instance
 
 resource "aws_instance" "jenkins_instance" {
   ami                         = data.aws_ami.latest_rhel.id
-  instance_type               = var.jenkins_instance_type # Suitable for Jenkins workloads    
+  instance_type               = "t2.medium"
   subnet_id                   = aws_subnet.public_subnet[0].id
   vpc_security_group_ids      = [aws_security_group.jenkins_sg.id]
   key_name                    = aws_key_pair.public_key.key_name
@@ -228,11 +176,7 @@ resource "aws_instance" "jenkins_instance" {
 
   # User data script for automatic Jenkins installation & configuration
   user_data = templatefile("${path.module}/jenkins-userdata.sh", {
-    region           = var.aws_region
-    nexus_registry   = var.nexus_registry
-    nexus_username   = var.nexus_username
-    nexus_password   = var.nexus_password
-    newrelic_license = var.newrelic_license
+    region = var.region
   })
 
   # Root block device configuration
@@ -261,20 +205,11 @@ resource "aws_security_group" "elb_sg" {
   # Allow inbound traffic on port 80 for HTTP (ELB frontend)
   ingress {
     description = "Allow HTTP traffic"
-    from_port   = 80
-    to_port     = 80
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"] # Allow from anywhere
   }
-
-  # Optional: keep HTTPS (443) open if you plan to terminate SSL on the ELB with a server cert
-  # ingress {
-  #   description      = "Allow HTTPS traffic"
-  #   from_port        = 443
-  #   to_port          = 443
-  #   protocol         = "tcp"
-  #   cidr_blocks      = ["0.0.0.0/0"]
-  # }
 
   # Allow all outbound traffic
   egress {
@@ -298,13 +233,13 @@ resource "aws_elb" "jenkins_elb" {
   listener {
     instance_port      = 8080
     instance_protocol  = "http"
-    lb_port            = 80
-    lb_protocol        = "http"
-    ssl_certificate_id = aws_acm_certificate.jenkins_cert.arn
+    lb_port            = 443
+    lb_protocol        = "https"
+    ssl_certificate_id = aws_acm_certificate.acm-cert.arn
   }
 
   health_check {
-    target              = "HTTP:8080/login" # Health check endpoint for Jenkins
+    target              = "HTTP:8080/login"
     interval            = 30
     healthy_threshold   = 2
     unhealthy_threshold = 2
@@ -312,91 +247,71 @@ resource "aws_elb" "jenkins_elb" {
   }
 
   instances = [aws_instance.jenkins_instance.id]
-
   tags = {
     Name = "${local.name}-jenkins-elb"
   }
 }
-# ============================================================
+
 # Lookup the existing Route 53 hosted zone for majiktech.uk
-# ============================================================
-data "aws_route53_zone" "majiktech_zone" {
-  name         = "majiktech.uk"
+data "aws_route53_zone" "my-hosted-zone" {
+  name         = var.domain
   private_zone = false
 }
 
-# ============================================================
-# Request an ACM certificate for Jenkins subdomain
-# ============================================================
-resource "aws_acm_certificate" "jenkins_cert" {
-  # Request certificate for apex domain and include wildcard as SAN
-  domain_name               = "majiktech.uk"
-  subject_alternative_names = ["*.majiktech.uk"]
+# Create ACM certificate with DNS validation 
+resource "aws_acm_certificate" "acm-cert" {
+  domain_name               = var.domain
+  subject_alternative_names = ["*.${var.domain}"]
   validation_method         = "DNS"
-
   lifecycle {
     create_before_destroy = true
   }
 
   tags = {
-    Name = "jenkins-cert-majiktech"
+    Name = "${local.name}-acm-cert"
   }
 }
 
-# ============================================================
-# Create DNS validation records in Route 53
-# ============================================================
-resource "aws_route53_record" "cert_validation" {
+# fetch DNS validation records for the ACM certificate
+resource "aws_route53_record" "acm_validation_records" {
   for_each = {
-    for dvo in aws_acm_certificate.jenkins_cert.domain_validation_options : dvo.domain_name => {
+    for dvo in aws_acm_certificate.acm-cert.domain_validation_options : dvo.domain_name => {
       name  = dvo.resource_record_name
       type  = dvo.resource_record_type
       value = dvo.resource_record_value
     }
   }
-
-  zone_id         = data.aws_route53_zone.majiktech_zone.zone_id
+  # Create DNS validation records for acm certificate
+  zone_id         = data.aws_route53_zone.my-hosted-zone.zone_id
+  allow_overwrite = true
   name            = each.value.name
   type            = each.value.type
-  ttl             = 300
+  ttl             = 60
   records         = [each.value.value]
-  allow_overwrite = true
+  depends_on      = [aws_acm_certificate.acm-cert]
 }
 
 # ============================================================
 # Validate the ACM certificate after DNS records are created
 # ============================================================
-resource "aws_acm_certificate_validation" "jenkins_cert_validation" {
-  certificate_arn         = aws_acm_certificate.jenkins_cert.arn
-  validation_record_fqdns = [for r in aws_route53_record.cert_validation : r.fqdn]
+resource "aws_acm_certificate_validation" "acm_cert_validation" {
+  certificate_arn         = aws_acm_certificate.acm-cert.arn
+  validation_record_fqdns = [for r in aws_route53_record.acm_validation_records : r.fqdn]
 }
 
 # ============================================================
 # Create a Route 53 Alias record for the Jenkins domain
 # ============================================================
 resource "aws_route53_record" "jenkins_alias" {
-  zone_id = data.aws_route53_zone.majiktech_zone.zone_id
-  name    = "jenkins.majiktech.uk"
+  zone_id = data.aws_route53_zone.my-hosted-zone.zone_id
+  name    = "jenkins.${var.domain}"
   type    = "A"
-
   alias {
     name                   = aws_elb.jenkins_elb.dns_name
     zone_id                = aws_elb.jenkins_elb.zone_id
     evaluate_target_health = true
   }
-
-  depends_on = [aws_acm_certificate_validation.jenkins_cert_validation]
 }
-
-/* -------------------------------------------------------
-   Vault server + ELB
-   - Ubuntu AMI data source
-   - IAM role/profile for EC2 (SSM + KMS policy)
-   - Security groups for Vault and Vault ELB
-   - EC2 instance (vault-server)
-   - Classic ELB in front of Vault
-   - Route53 record for Vault
-   ------------------------------------------------------- */
 
 # Fetch latest Ubuntu 22.04 LTS AMI
 data "aws_ami" "ubuntu" {
@@ -457,10 +372,32 @@ resource "aws_iam_policy" "vault_kms_policy" {
         Action = [
           "kms:Encrypt",
           "kms:Decrypt",
+          "kms:ReEncrypt*",
           "kms:GenerateDataKey*",
           "kms:DescribeKey"
         ]
-        Resource = "*"
+        Resource = "${aws_kms_key.vault_kms.arn}"
+      }
+    ]
+  })
+}
+
+/* Backend & Auto-unseal resources for Vault */
+
+# KMS key for auto-unseal
+resource "aws_kms_key" "vault_kms" {
+  description             = "KMS key for Vault auto-unseal"
+  deletion_window_in_days = 7
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Sid       = "Enable IAM users to use the key"
+        Effect    = "Allow"
+        Principal = { AWS = "*" }
+        Action    = "kms:*"
+        Resource  = "*"
       }
     ]
   })
@@ -533,7 +470,7 @@ resource "aws_security_group" "vault_elb_sg" {
 # Vault EC2 instance
 resource "aws_instance" "vault_server" {
   ami                         = data.aws_ami.ubuntu.id
-  instance_type               = var.vault_instance_type
+  instance_type               = "t2.medium"
   subnet_id                   = aws_subnet.public_subnet[0].id
   vpc_security_group_ids      = [aws_security_group.vault_sg.id]
   key_name                    = aws_key_pair.public_key.key_name
@@ -541,9 +478,9 @@ resource "aws_instance" "vault_server" {
   associate_public_ip_address = true
 
   user_data = templatefile("${path.module}/vault-userdata.sh", {
-    region          = var.aws_region
-    key             = aws_kms_key.vault_kms.arn
-    "VAULT_VERSION" = var.vault_version
+    region          = var.region
+    key             = aws_kms_key.vault_kms.id
+    "VAULT_VERSION" = "1.18.3"
   })
 
   root_block_device {
@@ -566,27 +503,29 @@ resource "aws_elb" "vault_elb" {
   name            = "${local.name}-vault-elb"
   subnets         = aws_subnet.public_subnet[*].id
   security_groups = [aws_security_group.vault_elb_sg.id]
-  depends_on      = [aws_acm_certificate_validation.jenkins_cert_validation]
+  depends_on      = [aws_acm_certificate_validation.acm_cert_validation]
 
   listener {
     instance_port      = 8200
     instance_protocol  = "http"
-    lb_port            = 80
-    lb_protocol        = "http"
-    ssl_certificate_id = aws_acm_certificate.jenkins_cert.arn
+    lb_port            = 443
+    lb_protocol        = "https"
+    ssl_certificate_id = aws_acm_certificate.acm-cert.arn
   }
 
   health_check {
-    # Use Vault HTTP health endpoint so ELB can correctly evaluate service health.
-    # We include standbyok and perfstandbyok so standby & performance standby nodes are treated as healthy for routing purposes.
-    target              = "HTTP:8200/v1/sys/health?standbyok=true&perfstandbyok=true"
-    interval            = 30
+    target              = "HTTP:8200/v1/sys/health"
     healthy_threshold   = 2
     unhealthy_threshold = 2
-    timeout             = 5
+    timeout             = 3
+    interval            = 30
   }
 
-  instances = [aws_instance.vault_server.id]
+  instances                   = [aws_instance.vault_server.id]
+  cross_zone_load_balancing   = true
+  idle_timeout                = 400
+  connection_draining         = true
+  connection_draining_timeout = 400
 
   tags = {
     Name = "${local.name}-vault-elb"
@@ -595,8 +534,8 @@ resource "aws_elb" "vault_elb" {
 
 # Route53 record for Vault
 resource "aws_route53_record" "vault_alias" {
-  zone_id = data.aws_route53_zone.majiktech_zone.zone_id
-  name    = var.vault_domain
+  zone_id = data.aws_route53_zone.my-hosted-zone.zone_id
+  name    = "vault.${var.domain}"
   type    = "A"
 
   alias {
@@ -604,27 +543,6 @@ resource "aws_route53_record" "vault_alias" {
     zone_id                = aws_elb.vault_elb.zone_id
     evaluate_target_health = true
   }
-  depends_on = [aws_acm_certificate_validation.jenkins_cert_validation]
+  depends_on = [aws_acm_certificate_validation.acm_cert_validation]
 
-}
-
-/* Backend & Auto-unseal resources for Vault */
-
-# KMS key for auto-unseal
-resource "aws_kms_key" "vault_kms" {
-  description             = "KMS key for Vault auto-unseal"
-  deletion_window_in_days = 7
-
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Sid       = "Enable IAM users to use the key"
-        Effect    = "Allow"
-        Principal = { AWS = "*" }
-        Action    = "kms:*"
-        Resource  = "*"
-      }
-    ]
-  })
 }
