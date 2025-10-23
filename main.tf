@@ -2,6 +2,12 @@ locals {
   name = "m3ap-main"
 }
 
+# data block to fetch route53 zone information
+data "aws_route53_zone" "my-hosted-zone" {
+  name         = var.domain_name
+  private_zone = false
+} 
+
 module "vpc" {
   source      = "./module/vpc"
   name        = local.name
@@ -22,14 +28,25 @@ module "bastion" {
 }
 
 module "nexus" {
-  source     = "./module/nexus"
-  name       = "nexus"
-  vpc_id     = module.vpc.vpc_id
-  vpc_cidr   = "10.0.0.0/16"
-  subnet_ids = module.vpc.public_subnet_ids
-  key_name   = module.vpc.key_pair_name
-  # instance_type can be overridden here if needed
-  # Replace the following with your real Route53 hosted zone and desired subdomain
-  domain     = "majiktech.uk"
-  subdomain  = "nexus.majiktech.uk"
+  source             = "./module/nexus"
+  name               = local.name
+  vpc_id             = module.vpc.vpc_id
+  subnet_ids         = module.vpc.public_subnet_ids
+  key_pair_name      = module.vpc.key_pair_name
+  domain_name        = var.domain_name
+  vpc_cidr           = "10.0.0.0/16"
+  newrelic_api_key   = var.newrelic_api_key 
+  newrelic_account_id = var.newrelic_account_id
+}
+
+module "sonarqube" {
+  source = "./module/sonarqube"
+  name        = local.name
+  vpc_id      = module.vpc.vpc_id 
+  subnet_id   = module.vpc.public_subnet_ids[0]
+  key_pair_name = module.vpc.key_pair_name
+  domain_name = var.domain_name
+  subnet_ids  = module.vpc.public_subnet_ids
+
+
 }

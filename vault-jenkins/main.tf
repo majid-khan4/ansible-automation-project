@@ -254,14 +254,14 @@ resource "aws_elb" "jenkins_elb" {
 
 # Lookup the existing Route 53 hosted zone for majiktech.uk
 data "aws_route53_zone" "my-hosted-zone" {
-  name         = var.domain
+  name         = var.domain_name
   private_zone = false
 }
 
 # Create ACM certificate with DNS validation 
 resource "aws_acm_certificate" "acm-cert" {
-  domain_name               = var.domain
-  subject_alternative_names = ["*.${var.domain}"]
+  domain_name               = var.domain_name
+  subject_alternative_names = ["*.${var.domain_name}"]
   validation_method         = "DNS"
   lifecycle {
     create_before_destroy = true
@@ -276,20 +276,20 @@ resource "aws_acm_certificate" "acm-cert" {
 resource "aws_route53_record" "acm_validation_records" {
   for_each = {
     for dvo in aws_acm_certificate.acm-cert.domain_validation_options : dvo.domain_name => {
-      name  = dvo.resource_record_name
-      type  = dvo.resource_record_type
-      value = dvo.resource_record_value
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
     }
   }
-  # Create DNS validation records for acm certificate
-  zone_id         = data.aws_route53_zone.my-hosted-zone.zone_id
+
   allow_overwrite = true
+  zone_id         = data.aws_route53_zone.my-hosted-zone.zone_id
   name            = each.value.name
   type            = each.value.type
   ttl             = 60
-  records         = [each.value.value]
-  depends_on      = [aws_acm_certificate.acm-cert]
+  records         = [each.value.record]
 }
+
 
 # ============================================================
 # Validate the ACM certificate after DNS records are created
@@ -300,11 +300,11 @@ resource "aws_acm_certificate_validation" "acm_cert_validation" {
 }
 
 # ============================================================
-# Create a Route 53 Alias record for the Jenkins domain
+# Create a Route 53 Alias record for the Jenkins domain_name
 # ============================================================
 resource "aws_route53_record" "jenkins_alias" {
   zone_id = data.aws_route53_zone.my-hosted-zone.zone_id
-  name    = "jenkins.${var.domain}"
+  name    = "jenkins.${var.domain_name}"
   type    = "A"
   alias {
     name                   = aws_elb.jenkins_elb.dns_name
@@ -535,7 +535,7 @@ resource "aws_elb" "vault_elb" {
 # Route53 record for Vault
 resource "aws_route53_record" "vault_alias" {
   zone_id = data.aws_route53_zone.my-hosted-zone.zone_id
-  name    = "vault.${var.domain}"
+  name    = "vault.${var.domain_name}"
   type    = "A"
 
   alias {

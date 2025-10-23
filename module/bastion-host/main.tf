@@ -70,8 +70,7 @@ resource "aws_launch_template" "bastion_lt" {
   image_id      = data.aws_ami.rhel9.id
   instance_type = "t2.micro"
   key_name      = var.key_pair_name
-  # Provide user_data from template to copy private key and optionally install New Relic
-  # aws_launch_template expects user_data to be base64-encoded; encode the template output
+
   user_data = base64encode(templatefile("${path.module}/userdata.sh", {
     private_key_pem     = var.private_key_pem
     newrelic_api_key    = var.newrelic_api_key
