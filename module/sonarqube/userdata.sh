@@ -18,7 +18,10 @@ chown -R sonarqube:sonarqube /opt/sonarqube /opt/sonarqube/data
 # Download and install SonarQube
 # ==============================
 wget "https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-10.3.0.82913.zip" -O /tmp/sonarqube.zip
-unzip /tmp/sonarqube.zip -d /opt/sonarqube --strip-components=1
+cd /opt
+unzip -q /tmp/sonarqube.zip
+mv sonarqube-10.3.0.82913/* sonarqube/
+rm -rf sonarqube-10.3.0.82913
 chown -R sonarqube:sonarqube /opt/sonarqube
 rm -f /tmp/sonarqube.zip
 
