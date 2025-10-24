@@ -1,9 +1,9 @@
 variable "newrelic_api_key" {
-  description = "New Relic API / license key for Infrastructure agent"
+  description = "New Relic API key"
   type        = string
-  sensitive   = true
-  default     = ""
+  default = ""  
 }
+
 
 variable "newrelic_account_id" {
   description = "New Relic account id (optional)"
@@ -15,4 +15,9 @@ variable "domain_name" {
   description = "The domain name for the project"
   type        = string
   default     = "majiktech.uk"
+}
+
+variable "s3_bucket" {
+  description = "S3 bucket name for Ansible playbooks upload."
+  type        = string
 }
