@@ -73,16 +73,25 @@ resource "aws_instance" "sonarqube" {
   vpc_security_group_ids      = [aws_security_group.sonarqube_sg.id]
   iam_instance_profile        = aws_iam_instance_profile.sonar_ssm_profile.name
   associate_public_ip_address = true
-  #user_data                   = file("${path.module}/user-data.sh")
+  user_data = templatefile("${path.module}/userdata.sh", {
+    newrelic_api_key    = var.newrelic_api_key
+    newrelic_account_id = var.newrelic_account_id
+  })
   
   metadata_options { http_tokens = "required" }
   root_block_device {
-    volume_size = 20
+    volume_size = 30
     volume_type = "gp3"
     encrypted   = true
+    tags = {
+      Name = "${var.name}-sonarqube-root-volume"
+    }
   }
   tags = {
     Name = "${var.name}-sonarqube"
+    Service = "sonarqube"
+    Environment = "production"
+    Monitoring = "newrelic"
   }
 }
 
@@ -103,8 +112,8 @@ resource "aws_elb" "sonarqube_elb" {
   health_check {
     healthy_threshold   = 2
     unhealthy_threshold = 2
-    timeout             = 3
-    target              = "TCP:9000"
+    timeout             = 5
+    target              = "HTTP:9000/"
     interval            = 30
   }
 
