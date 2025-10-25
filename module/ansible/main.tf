@@ -80,15 +80,33 @@ resource "aws_instance" "ansible" {
   iam_instance_profile        = aws_iam_instance_profile.ansible_profile.name
   key_name                    = var.key_pair_name
   associate_public_ip_address = false
+  user_data = templatefile("${path.module}/ansible-userdata.sh", {
+    private_key_pem        = var.private_key_pem
+    s3_bucket             = var.s3_bucket
+    nexus_ip              = var.nexus_ip
+    newrelic_api_key      = var.newrelic_api_key
+    newrelic_account_id   = var.newrelic_account_id
+  })
+
+  root_block_device {
+    volume_size = 20
+    volume_type = "gp3"
+    encrypted   = true
+  }
 
   tags = {
     Name = "${var.name}-ansible"
+  }
+
+  lifecycle {
+    ignore_changes = [user_data]
   }
 }
 
 // Null resource to copy playbooks to S3
 resource "null_resource" "copy_playbooks" {
-  provisioner "local-exec" {
-    command = "aws s3 cp ../playbooks/ s3://${var.s3_bucket}/playbooks/ --recursive"
-  }
+    count = 0
+#   provisioner "local-exec" {
+#     command = "aws s3 cp ../playbooks/ s3://${var.s3_bucket}/playbooks/ --recursive"
 }
+

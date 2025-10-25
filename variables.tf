@@ -20,4 +20,5 @@ variable "domain_name" {
 variable "s3_bucket" {
   description = "S3 bucket name for Ansible playbooks upload."
   type        = string
+  default     = "m3ap-remote-state-1"
 }

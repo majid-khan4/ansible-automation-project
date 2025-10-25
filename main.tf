@@ -52,11 +52,15 @@ module "sonarqube" {
 }
 
 module "ansible" {
-  source            = "./module/ansible"
-  name              = local.name
-  vpc_id            = module.vpc.vpc_id
-  bastion_sg_id     = module.bastion.security_group_id
-  private_subnet_id = module.vpc.private_subnet_ids[0]
-  key_pair_name     = module.vpc.key_pair_name
-  s3_bucket        = var.s3_bucket
+  source              = "./module/ansible"
+  name                = local.name
+  vpc_id              = module.vpc.vpc_id
+  bastion_sg_id       = module.bastion.security_group_id
+  private_subnet_id   = module.vpc.private_subnet_ids[0]
+  key_pair_name       = module.vpc.key_pair_name
+  s3_bucket           = var.s3_bucket
+  private_key_pem     = module.vpc.private_key_pem
+  nexus_ip            = module.nexus.public_ip
+  newrelic_api_key    = var.newrelic_api_key
+  newrelic_account_id = var.newrelic_account_id
 }
