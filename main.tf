@@ -1,5 +1,5 @@
 locals {
-  name = "m3ap-main"
+  name = "m3ap"
 }
 
 # data block to fetch route53 zone information
@@ -63,4 +63,16 @@ module "ansible" {
   nexus_ip            = module.nexus.public_ip
   newrelic_api_key    = var.newrelic_api_key
   newrelic_account_id = var.newrelic_account_id
+}
+
+module "stage-env" {
+  source              = "./module/stage-env"
+  name                = local.name
+  vpc_id              = module.vpc.vpc_id
+  public_subnet_ids   = module.vpc.public_subnet_ids
+  private_subnet_ids  = module.vpc.private_subnet_ids
+  bastion_sg_id       = module.bastion.security_group_id
+  ansible_sg_id       = module.ansible.security_group_id
+  domain_name         = var.domain_name
+  keypair            = module.vpc.key_pair_name
 }
