@@ -34,7 +34,6 @@ module "nexus" {
   subnet_ids         = module.vpc.public_subnet_ids
   key_pair_name      = module.vpc.key_pair_name
   domain_name        = var.domain_name
-  vpc_cidr           = "10.0.0.0/16"
   newrelic_api_key   = var.newrelic_api_key 
   newrelic_account_id = var.newrelic_account_id
 }
@@ -66,27 +65,31 @@ module "ansible" {
 }
 
 module "stage-env" {
-  source              = "./module/stage-env"
-  name                = local.name
-  vpc_id              = module.vpc.vpc_id
-  public_subnet_ids   = module.vpc.public_subnet_ids
-  private_subnet_ids  = module.vpc.private_subnet_ids
-  bastion_sg_id       = module.bastion.security_group_id
-  ansible_sg_id       = module.ansible.security_group_id
-  domain_name         = var.domain_name
-  keypair            = module.vpc.key_pair_name
+  source = "./module/stage-env"
+  name = local.name
+  vpc_id = module.vpc.vpc_id
+  public_subnet_ids = [module.vpc.public_subnet_ids[0],module.vpc.public_subnet_ids[1]]
+  private_subnet_ids = [module.vpc.private_subnet_ids[0],module.vpc.private_subnet_ids[1]]
+  bastion_sg_id = module.bastion.security_group_id
+  ansible_sg_id = module.ansible.security_group_id
+  domain_name = var.domain_name
+  keypair = module.vpc.key_pair_name
+  new_relic_api_key = var.newrelic_api_key
+  new_relic_account_id = var.newrelic_account_id
 }
 
 module "prod-env" {
   source              = "./module/prod-env"
   name                = local.name
   vpc_id              = module.vpc.vpc_id
-  public_subnet_ids   = module.vpc.public_subnet_ids
-  private_subnet_ids  = module.vpc.private_subnet_ids
+  public_subnet_ids   = [module.vpc.public_subnet_ids[0],module.vpc.public_subnet_ids[1]]
+  private_subnet_ids  = [module.vpc.private_subnet_ids[0],module.vpc.private_subnet_ids[1]]
   bastion_sg_id       = module.bastion.security_group_id
   ansible_sg_id       = module.ansible.security_group_id
   domain_name         = var.domain_name
   keypair            = module.vpc.key_pair_name
+  new_relic_api_key    = var.newrelic_api_key
+  new_relic_account_id = var.newrelic_account_id
 }
 
 module "database" {
