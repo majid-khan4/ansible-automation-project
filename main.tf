@@ -1,5 +1,5 @@
 locals {
-  name = "m3ap"
+  name = "m3ap-main"
 }
 
 # data block to fetch route53 zone information
@@ -67,6 +67,18 @@ module "ansible" {
 
 module "stage-env" {
   source              = "./module/stage-env"
+  name                = local.name
+  vpc_id              = module.vpc.vpc_id
+  public_subnet_ids   = module.vpc.public_subnet_ids
+  private_subnet_ids  = module.vpc.private_subnet_ids
+  bastion_sg_id       = module.bastion.security_group_id
+  ansible_sg_id       = module.ansible.security_group_id
+  domain_name         = var.domain_name
+  keypair            = module.vpc.key_pair_name
+}
+
+module "prod-env" {
+  source              = "./module/prod-env"
   name                = local.name
   vpc_id              = module.vpc.vpc_id
   public_subnet_ids   = module.vpc.public_subnet_ids

@@ -1,8 +1,8 @@
 
 # --- Security Group for Load Balancer ---
-resource "aws_security_group" "stage_alb_sg" {
-  name        = "${var.name}-stage-alb-sg"
-  description = "Security group for Stage ALB"
+resource "aws_security_group" "prod_alb_sg" {
+  name        = "${var.name}-prod-alb-sg"
+  description = "Security group for prod ALB"
   vpc_id      = var.vpc_id
 
   ingress {
@@ -28,13 +28,13 @@ resource "aws_security_group" "stage_alb_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = { Name = "${var.name}-stage-alb-sg" }
+  tags = { Name = "${var.name}-prod-alb-sg" }
 }
 
 # --- Security Group for EC2 Instances ---
-resource "aws_security_group" "stage_sg" {
-  name        = "${var.name}-stage-sg"
-  description = "Security group for Stage App EC2s"
+resource "aws_security_group" "prod_sg" {
+  name        = "${var.name}-prod-sg"
+  description = "Security group for prod App EC2s"
   vpc_id      = var.vpc_id
 
   ingress {
@@ -42,7 +42,7 @@ resource "aws_security_group" "stage_sg" {
     from_port       = 8080
     to_port         = 8080
     protocol        = "tcp"
-    security_groups = [aws_security_group.stage_alb_sg.id]
+    security_groups = [aws_security_group.prod_alb_sg.id]
   }
 
   ingress {
@@ -64,41 +64,38 @@ resource "aws_security_group" "stage_sg" {
 }
 
 # --- Application Load Balancer ---
-resource "aws_lb" "stage_alb" {
-  name               = "${var.name}-stage-alb"
+resource "aws_lb" "prod_alb" {
+  name               = "${var.name}-prod-alb"
   load_balancer_type = "application"
-  security_groups    = [aws_security_group.stage_alb_sg.id]
+  security_groups    = [aws_security_group.prod_alb_sg.id]
   subnets            = var.public_subnet_ids
   idle_timeout       = 60
 
-  tags = { Name = "${var.name}-stage-alb" }
+  tags = { Name = "${var.name}-prod-alb" }
 }
 
 # --- Target Group ---
-resource "aws_lb_target_group" "stage_tg" {
-  name     = "${var.name}-stage-tg"
+resource "aws_lb_target_group" "prod_tg" {
+  name     = "${var.name}-prod-tg"
   port     = 8080
   protocol = "HTTP"
   vpc_id   = var.vpc_id
 
   health_check {
-    enabled             = true
     path                = "/"
+    matcher             = "200-399"
     interval            = 30
     timeout             = 5
     healthy_threshold   = 2
     unhealthy_threshold = 2
   }
-    lifecycle {
-    create_before_destroy = true
-  }
 
-  tags = { Name = "${var.name}-stage-tg" }
+  tags = { Name = "${var.name}-prod-tg" }
 }
 
 # --- HTTP Redirect to HTTPS ---
 resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.stage_alb.arn
+  load_balancer_arn = aws_lb.prod_alb.arn
   port              = 80
   protocol          = "HTTP"
 
@@ -114,14 +111,14 @@ resource "aws_lb_listener" "http" {
 
 # --- HTTPS Listener ---
 resource "aws_lb_listener" "https" {
-  load_balancer_arn = aws_lb.stage_alb.arn
+  load_balancer_arn = aws_lb.prod_alb.arn
   port              = 443
   protocol          = "HTTPS"
   certificate_arn   = data.aws_acm_certificate.acm_cert.arn
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.stage_tg.arn
+    target_group_arn = aws_lb_target_group.prod_tg.arn
   }
 }
 
@@ -146,39 +143,39 @@ data "aws_ami" "rhel9" {
   }
 }
 
-# Launch Template Configuration for EC2 Instances in Stage Env 
-resource "aws_launch_template" "stage_launch_template" {
-  name_prefix   = "${var.name}-stage_tmpl"
+# Launch Template Configuration for EC2 Instances in prod Env 
+resource "aws_launch_template" "prod_launch_template" {
+  name_prefix   = "${var.name}-prod_tmpl"
   image_id      = data.aws_ami.rhel9.id
   instance_type = "t2.medium"
   key_name      = var.keypair
 }
 
 # --- Auto Scaling Group ---
-resource "aws_autoscaling_group" "stage_asg" {
-  name                      = "${var.name}-stage-asg"
+resource "aws_autoscaling_group" "prod_asg" {
+  name                      = "${var.name}-prod-asg"
   vpc_zone_identifier        = var.private_subnet_ids
   desired_capacity           = 1
   min_size                   = 1
   max_size                   = 3
   health_check_type          = "EC2"
   health_check_grace_period  = 120
-  target_group_arns          = [aws_lb_target_group.stage_tg.arn]
+  target_group_arns          = [aws_lb_target_group.prod_tg.arn]
   launch_template {
-        id      = aws_launch_template.stage_launch_template.id
+        id      = aws_launch_template.prod_launch_template.id
         version = "$Latest"
         }
   tag {
     key                 = "Name"
-    value               = "${var.name}-stage-asg"
+    value               = "${var.name}-prod-asg"
     propagate_at_launch = true
   }
 }
 
 # Auto Scaling Policy for Dynamic Scaling on CPU Utilization   
-resource "aws_autoscaling_policy" "stage_asg_policy" {
-  name                   = "${var.name}-stage-asg-policy"
-  autoscaling_group_name = aws_autoscaling_group.stage_asg.name
+resource "aws_autoscaling_policy" "prod_asg_policy" {
+  name                   = "${var.name}-prod-asg-policy"
+  autoscaling_group_name = aws_autoscaling_group.prod_asg.name
   adjustment_type        = "ChangeInCapacity"
   policy_type            = "TargetTrackingScaling"
 
@@ -203,14 +200,14 @@ data "aws_acm_certificate" "acm_cert" {
 }   
 
 # Route 53 Record
-resource "aws_route53_record" "stage_dns" {
+resource "aws_route53_record" "prod_dns" {
   zone_id = data.aws_route53_zone.my_hosted_zone.zone_id
-  name    = "stage.${var.domain_name}"
+  name    = "prod.${var.domain_name}"
   type    = "A"
 
   alias {
-    name                   = aws_lb.stage_alb.dns_name
-    zone_id                = aws_lb.stage_alb.zone_id
+    name                   = aws_lb.prod_alb.dns_name
+    zone_id                = aws_lb.prod_alb.zone_id
     evaluate_target_health = true
   }
 }
