@@ -88,3 +88,14 @@ module "prod-env" {
   domain_name         = var.domain_name
   keypair            = module.vpc.key_pair_name
 }
+
+module "database" {
+  source = "./module/databse"
+  name = local.name
+  vpc_id = module.vpc.vpc_id
+  db_subnets = [module.vpc.private_subnet_ids[0], module.vpc.private_subnet_ids[1]]
+  stage_sg = module.stage-env.stage_security_group_id
+  prod_sg = module.prod-env.prod_security_group_id
+  db_username = "admin"
+  db_password = "admin123"
+}
