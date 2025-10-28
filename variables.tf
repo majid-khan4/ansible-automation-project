@@ -1,14 +1,14 @@
 variable "newrelic_api_key" {
   description = "New Relic API key"
   type        = string
-  default = ""  
+  default = "NRAK-RV61KHOC84AWAPUP24WCTQV9UY3"  
 }
 
 
 variable "newrelic_account_id" {
   description = "New Relic account id (optional)"
   type        = string
-  default     = ""
+  default     = "3947187"
 }
 
 variable "domain_name" {
