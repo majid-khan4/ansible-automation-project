@@ -150,7 +150,7 @@ data "aws_ami" "rhel9" {
 resource "aws_launch_template" "stage_launch_template" {
   name_prefix   = "${var.name}-stage-tmpl"
   image_id      = data.aws_ami.rhel9.id
-  instance_type = "t3.micro"
+  instance_type = "t2.medium"
   key_name      = var.keypair
 
   # Pass user_data as base64 encoded from the local script and substitute variables dynamically

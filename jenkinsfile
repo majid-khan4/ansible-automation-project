@@ -1,0 +1,120 @@
+pipeline {
+    agent any
+    
+    environment {
+        SLACK_CHANNEL = '#6th-october-2025-pet-adoption-auto-discovery-project-eu-team1'
+    }
+    
+    parameters {
+        choice(
+            name: 'TERRAFORM_ACTION',
+            choices: ['apply', 'destroy'],
+            description: 'Terraform action to perform'
+        )
+        booleanParam(
+            name: 'SKIP_CHECKOV',
+            defaultValue: false,
+            description: 'Skip Checkov security scan'
+        )
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        
+        stage('Install Checkov on RHEL 9') {
+            when {
+                expression { 
+                    return !params.SKIP_CHECKOV 
+                }
+            }
+            steps {
+                sh '''
+                    echo "Installing Checkov on RHEL 9..."
+                    
+                    # Install Python 3.9+ on RHEL 9
+                    sudo dnf update -y
+                    sudo dnf install -y python3.11 python3.11-pip
+                    
+                    # Set Python 3.11 as default
+                    sudo alternatives --set python /usr/bin/python3.11
+                    
+                    # Install Checkov
+                    pip3.11 install --upgrade pip
+                    pip3.11 install checkov
+                    
+                    # Verify installation
+                    checkov --version
+                '''
+            }
+        }
+        
+        stage('Checkov Security Scan') {
+            when {
+                expression { 
+                    return !params.SKIP_CHECKOV 
+                }
+            }
+            steps {
+                sh '''
+                    echo "Running Checkov security scan on RHEL 9..."
+                    checkov -d terraform/ --quiet --compact --framework terraform
+                '''
+            }
+        }
+        
+        stage('Terraform Init') {
+            steps {
+                dir('terraform') {
+                    sh 'terraform init'
+                }
+            }
+        }
+        
+        stage('Terraform Apply/Destroy') {
+            steps {
+                dir('terraform') {
+                    script {
+                        if (params.TERRAFORM_ACTION == 'apply') {
+                            sh '''
+                                terraform plan -out=tfplan
+                                terraform apply -auto-approve tfplan
+                            '''
+                        } else if (params.TERRAFORM_ACTION == 'destroy') {
+                            sh 'terraform destroy -auto-approve'
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            sh 'rm -rf .terraform terraform/tfplan*'
+        }
+        
+        success {
+            slackSend(
+                channel: env.SLACK_CHANNEL,
+                color: 'good',
+                message: """✅ Infrastructure Pipeline SUCCESS
+Action: ${params.TERRAFORM_ACTION}
+Build: ${env.BUILD_URL}"""
+            )
+        }
+        
+        failure {
+            slackSend(
+                channel: env.SLACK_CHANNEL,
+                color: 'danger',
+                message: """❌ Infrastructure Pipeline FAILED
+Action: ${params.TERRAFORM_ACTION}
+Build: ${env.BUILD_URL}"""
+            )
+        }
+    }
+}
