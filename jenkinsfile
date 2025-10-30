@@ -35,19 +35,19 @@ pipeline {
                 sh '''
                     echo "Installing Checkov on RHEL 9..."
                     
-                    # Install Python 3.9+ on RHEL 9
+                    # Check current Python version
+                    python3 --version
+                    
+                    # Install Python 3.11 and required packages
                     sudo dnf update -y
                     sudo dnf install -y python3.11 python3.11-pip
                     
-                    # Set Python 3.11 as default
-                    sudo alternatives --set python /usr/bin/python3.11
-                    
-                    # Install Checkov
-                    pip3.11 install --upgrade pip
-                    pip3.11 install checkov
+                    # Install Checkov using Python 3.11 specifically
+                    python3.11 -m pip install --upgrade pip
+                    python3.11 -m pip install checkov
                     
                     # Verify installation
-                    checkov --version
+                    python3.11 -m checkov --version
                 '''
             }
         }
@@ -61,7 +61,7 @@ pipeline {
             steps {
                 sh '''
                     echo "Running Checkov security scan on RHEL 9..."
-                    checkov -d terraform/ --quiet --compact --framework terraform
+                    python3.11 -m checkov -d terraform/ --quiet --compact --framework terraform
                 '''
             }
         }
