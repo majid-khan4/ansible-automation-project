@@ -50,7 +50,7 @@ resource "aws_security_group" "prod_sg" {
     from_port       = 22
     to_port         = 22
     protocol        = "tcp"
-    security_groups = [var.bastion_sg_id, var.ansible_sg_id]
+    security_groups = [var.bastion_sg, var.ansible_sg]
   }
 
   egress {
@@ -60,7 +60,7 @@ resource "aws_security_group" "prod_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = { Name = "${var.name}-app-sg" }
+  tags = { Name = "${var.name}-prod-sg" }
 }
 
 # --- Application Load Balancer ---
@@ -147,21 +147,21 @@ data "aws_ami" "rhel9" {
 resource "aws_launch_template" "prod_launch_template" {
   name_prefix   = "${var.name}-prod-tmpl"
   image_id      = data.aws_ami.rhel9.id
-  instance_type = "t3.medium"
+  instance_type = "t3.micro"
   key_name      = var.keypair
 
-  # Pass user_data from the local script and substitute variables dynamically
-  user_data = templatefile("${path.module}/prod-userdata.sh", {
-      NEW_RELIC_API_KEY    = var.new_relic_api_key
-      NEW_RELIC_ACCOUNT_ID = var.new_relic_account_id
-    })
+  # Pass user_data as base64 encoded from the local script and substitute variables dynamically
+  user_data = base64encode(templatefile("${path.module}/prod-userdata.sh", {
+    NEW_RELIC_API_KEY    = var.new_relic_api_key
+    NEW_RELIC_ACCOUNT_ID = var.new_relic_account_id
+  }))
 
   vpc_security_group_ids = [aws_security_group.prod_sg.id]
 
   tag_specifications {
     resource_type = "instance"
     tags = {
-      Name = "${var.name}-prod-ec2"
+      Name        = "${var.name}-prod-ec2"
       Environment = "prod"
     }
   }

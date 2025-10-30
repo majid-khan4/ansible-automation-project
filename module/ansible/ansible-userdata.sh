@@ -15,20 +15,10 @@ sudo ln -svf /usr/local/bin/aws /usr/bin/aws
 sudo dnf install -y ansible-core
 sudo pip3 install boto3 botocore
 
-# Install Ansible AWS collection
-sudo ansible-galaxy collection install amazon.aws
-
-# Create ansible user if not exists
-sudo useradd -m ansible || true
-
-# Setup SSH directory for ansible user
-sudo mkdir -p /home/ansible/.ssh
-sudo chmod 700 /home/ansible/.ssh
-
 # Copy private key into ansible user home
-sudo bash -c 'echo "${private_key_pem}" > /home/ansible/.ssh/id_rsa'
-sudo chmod 400 /home/ansible/.ssh/id_rsa
-sudo chown ansible:ansible /home/ansible/.ssh/id_rsa
+echo "${private_key_pem}" > /home/ec2-user/.ssh/id_rsa
+sudo chmod 400 /home/ec2-user/.ssh/id_rsa
+sudo chown ec2-user:ec2-user /home/ec2-user/.ssh/id_rsa
 
 # copying our file to ansible server
 sudo mkdir -p /home/ansible/playbooks
@@ -40,7 +30,7 @@ sleep 10
 
 # create ansible variables file
 sudo bash -c 'echo "NEXUS_IP: ${nexus_ip}:8085" > /etc/ansible/ansible_vars.yml'
-sudo chown ansible:ansible /etc/ansible/ansible_vars.yml
+sudo chown ec2-user:ec2-user /etc/ansible/ansible_vars.yml
 sudo chmod 755 /etc/ansible/prod-bashscript.sh
 sudo chmod 755 /etc/ansible/stage-bashscript.sh
 
@@ -54,4 +44,3 @@ sudo chmod 755 /home/ansible/playbooks
 
 #install new relic
 curl -Ls https://download.newrelic.com/install/newrelic-cli/scripts/install.sh | bash && sudo NEW_RELIC_API_KEY="${newrelic_api_key}" NEW_RELIC_ACCOUNT_ID="${newrelic_account_id}" NEW_RELIC_REGION=EU /usr/local/bin/newrelic install -y
-

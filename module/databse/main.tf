@@ -38,9 +38,9 @@ resource "aws_db_instance" "mysql_db" {
   identifier              = "${var.name}-mysql-db"
   allocated_storage       = 10
   engine                  = "mysql"
-  engine_version          = "8.0.36"
+  engine_version          = "8.0"
   instance_class          = "db.t3.micro"
-  parameter_group_name    = "default.mysql5.7"
+  parameter_group_name    = "default.mysql8.0"
   db_name                 = "petclinic"
   username                = var.db_username
   password                = var.db_password
