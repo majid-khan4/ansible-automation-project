@@ -22,30 +22,26 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
+                sh 'ls -la'  // Debug: Check directory structure
             }
         }
         
-        stage('Install Checkov on RHEL 9') {
-            when {
-                expression { 
-                    return !params.SKIP_CHECKOV 
-                }
-            }
+        stage('Install Terraform') {
             steps {
                 sh '''
-                    echo "Installing Checkov on RHEL 9..."
+                    echo "Installing Terraform on RHEL 9..."
                     
-                    # Install Python 3.11 and pip
-                    sudo dnf update -y
-                    sudo dnf install -y python3.11 python3.11-pip
+                    # Install required dependencies
+                    sudo dnf install -y yum-utils
                     
-                    # Upgrade pip and install Checkov with root user action to suppress warning
-                    python3.11 -m pip install --upgrade pip --root-user-action=ignore
-                    python3.11 -m pip install checkov --root-user-action=ignore
+                    # Add HashiCorp repository
+                    sudo yum-config-manager --add-repo https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo
                     
-                    # Verify installation by checking the binary
-                    which checkov || find /usr -name checkov 2>/dev/null | head -1
-                    checkov --version
+                    # Install Terraform
+                    sudo dnf install -y terraform
+                    
+                    # Verify installation
+                    terraform --version
                 '''
             }
         }
@@ -58,32 +54,49 @@ pipeline {
             }
             steps {
                 sh '''
-                    echo "Running Checkov security scan on RHEL 9..."
-                    checkov -d terraform/ --quiet --compact --framework terraform
+                    echo "Running Checkov security scan..."
+                    
+                    # Install Podman if not available
+                    if ! command -v podman &> /dev/null; then
+                        sudo dnf install -y podman
+                    fi
+                    
+                    # Run Checkov - scan current directory if terraform/ doesn't exist
+                    if [ -d "terraform" ]; then
+                        echo "Scanning terraform/ directory"
+                        podman run --rm -v $(pwd):/src bridgecrew/checkov:latest -d /src/terraform --quiet --compact --framework terraform
+                    else
+                        echo "Scanning current directory for Terraform files"
+                        podman run --rm -v $(pwd):/src bridgecrew/checkov:latest -d /src --quiet --compact --framework terraform
+                    fi
                 '''
             }
         }
         
         stage('Terraform Init') {
             steps {
-                dir('terraform') {
-                    sh 'terraform init'
+                script {
+                    // Check if terraform directory exists, otherwise use current directory
+                    if (fileExists('terraform')) {
+                        dir('terraform') {
+                            sh 'terraform init'
+                        }
+                    } else {
+                        sh 'terraform init'
+                    }
                 }
             }
         }
         
         stage('Terraform Apply/Destroy') {
             steps {
-                dir('terraform') {
-                    script {
-                        if (params.TERRAFORM_ACTION == 'apply') {
-                            sh '''
-                                terraform plan -out=tfplan
-                                terraform apply -auto-approve tfplan
-                            '''
-                        } else if (params.TERRAFORM_ACTION == 'destroy') {
-                            sh 'terraform destroy -auto-approve'
+                script {
+                    if (fileExists('terraform')) {
+                        dir('terraform') {
+                            executeTerraformAction()
                         }
+                    } else {
+                        executeTerraformAction()
                     }
                 }
             }
@@ -92,7 +105,7 @@ pipeline {
     
     post {
         always {
-            sh 'rm -rf .terraform terraform/tfplan*'
+            sh 'rm -rf .terraform terraform/tfplan* || true'
         }
         
         success {
@@ -114,5 +127,17 @@ Action: ${params.TERRAFORM_ACTION}
 Build: ${env.BUILD_URL}"""
             )
         }
+    }
+}
+
+// Helper function for Terraform actions
+def executeTerraformAction() {
+    if (params.TERRAFORM_ACTION == 'apply') {
+        sh '''
+            terraform plan -out=tfplan
+            terraform apply -auto-approve tfplan
+        '''
+    } else if (params.TERRAFORM_ACTION == 'destroy') {
+        sh 'terraform destroy -auto-approve'
     }
 }
