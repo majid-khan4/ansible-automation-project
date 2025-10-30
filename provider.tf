@@ -1,6 +1,6 @@
 provider "aws" {
   region = "eu-west-2"
-    profile = "personal_account"
+    # profile = "personal_account"
 }
 
 terraform {
@@ -12,6 +12,6 @@ terraform {
     encrypt = true
     use_lockfile = true
     region = "eu-west-2"
-    profile = "personal_account"
+    # profile = "personal_account"
   }
 } 
