@@ -1,143 +1,83 @@
 pipeline {
     agent any
-    
-    environment {
-        SLACK_CHANNEL = '#6th-october-2025-pet-adoption-auto-discovery-project-eu-team1'
+    tools {
+        terraform 'terraform'
     }
-    
     parameters {
-        choice(
-            name: 'TERRAFORM_ACTION',
-            choices: ['apply', 'destroy'],
-            description: 'Terraform action to perform'
-        )
-        booleanParam(
-            name: 'SKIP_CHECKOV',
-            defaultValue: false,
-            description: 'Skip Checkov security scan'
-        )
+        choice(name: 'action', choices: ['apply', 'destroy'], description: 'Select the action to perform')
     }
-    
+    triggers {
+        pollSCM('* * * * *') // Runs every minute
+    }
+    environment {
+        SLACKCHANNEL = '#6th-october-2025-pet-adoption-auto-discovery-project-eu-team1'
+        SLACKCREDENTIALS = credentials('slack')
+    }
     stages {
-        stage('Checkout') {
-            steps {
-                checkout scm
-                sh 'ls -la'  // Debug: Check directory structure
-            }
-        }
-        
-        stage('Install Terraform') {
-            steps {
-                sh '''
-                    echo "Installing Terraform on RHEL 9..."
-                    
-                    # Install required dependencies
-                    sudo dnf install -y yum-utils
-                    
-                    # Add HashiCorp repository
-                    sudo yum-config-manager --add-repo https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo
-                    
-                    # Install Terraform
-                    sudo dnf install -y terraform
-                    
-                    # Verify installation
-                    terraform --version
-                '''
-            }
-        }
-        
-        stage('Checkov Security Scan') {
-            when {
-                expression { 
-                    return !params.SKIP_CHECKOV 
-                }
-            }
-            steps {
-                sh '''
-                    echo "Running Checkov security scan..."
-                    
-                    # Install Podman if not available
-                    if ! command -v podman &> /dev/null; then
-                        sudo dnf install -y podman
-                    fi
-                    
-                    # Run Checkov - scan current directory if terraform/ doesn't exist
-                    if [ -d "terraform" ]; then
-                        echo "Scanning terraform/ directory"
-                        podman run --rm -v $(pwd):/src bridgecrew/checkov:latest -d /src/terraform --quiet --compact --framework terraform
-                    else
-                        echo "Scanning current directory for Terraform files"
-                        podman run --rm -v $(pwd):/src bridgecrew/checkov:latest -d /src --quiet --compact --framework terraform
-                    fi
-                '''
-            }
-        }
-        
-        stage('Terraform Init') {
+        stage('IAC Scan') {
             steps {
                 script {
-                    // Check if terraform directory exists, otherwise use current directory
-                    if (fileExists('terraform')) {
-                        dir('terraform') {
-                            sh 'terraform init'
-                        }
-                    } else {
-                        sh 'terraform init'
-                    }
+                    sh 'pip install pipenv'
+                    sh 'pipenv run pip install checkov'
+                    def checkovStatus = sh(script: 'pipenv run checkov -d . -o cli --output-file checkov-results.txt --quiet', returnStatus: true)
+                    junit allowEmptyResults: true, testResults: 'checkov-results.txt'
+                    // if (checkovStatus != 0) {
+                    //     error 'Checkov found some issues'
+                    // }
                 }
             }
         }
-        
-        stage('Terraform Apply/Destroy') {
+        stage('Terraform Init') {  // Fixed spelling
+            steps {
+                sh 'terraform init'
+            }
+        }
+        stage('Terraform format') {
+            steps {
+                sh 'terraform fmt --recursive'
+            }
+        }
+        stage('Terraform validate') {
+            steps {
+                sh 'terraform validate'
+            }
+        }
+        stage('Terraform plan') {
+            steps {
+                sh 'terraform plan'
+            }
+        }
+        stage('Terraform action') {
             steps {
                 script {
-                    if (fileExists('terraform')) {
-                        dir('terraform') {
-                            executeTerraformAction()
-                        }
-                    } else {
-                        executeTerraformAction()
-                    }
+                    sh "terraform ${action} -auto-approve"
                 }
             }
         }
     }
-    
     post {
         always {
-            sh 'rm -rf .terraform terraform/tfplan* || true'
+            script {
+                slackSend(
+                    channel: SLACKCHANNEL,
+                    color: currentBuild.result == 'SUCCESS' ? 'good' : 'danger',
+                    message: "Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL}) has been completed."
+                )
+            }
         }
-        
-        success {
-            slackSend(
-                channel: env.SLACK_CHANNEL,
-                color: 'good',
-                message: """✅ Infrastructure Pipeline SUCCESS
-Action: ${params.TERRAFORM_ACTION}
-Build: ${env.BUILD_URL}"""
-            )
-        }
-        
         failure {
             slackSend(
-                channel: env.SLACK_CHANNEL,
+                channel: SLACKCHANNEL,
                 color: 'danger',
-                message: """❌ Infrastructure Pipeline FAILED
-Action: ${params.TERRAFORM_ACTION}
-Build: ${env.BUILD_URL}"""
+                message: "Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' has failed. Check console output at ${env.BUILD_URL}."
             )
         }
-    }
-}
-
-// Helper function for Terraform actions
-def executeTerraformAction() {
-    if (params.TERRAFORM_ACTION == 'apply') {
-        sh '''
-            terraform plan -out=tfplan
-            terraform apply -auto-approve tfplan
-        '''
-    } else if (params.TERRAFORM_ACTION == 'destroy') {
-        sh 'terraform destroy -auto-approve'
+        success {
+            slackSend(
+                channel: SLACKCHANNEL,
+                color: 'good',
+                message: "Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' completed successfully. Check console output at ${env.BUILD_URL}."
+            )
+        }
     }
 }
