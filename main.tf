@@ -54,7 +54,7 @@ module "ansible" {
   source              = "./module/ansible"
   name                = local.name
   vpc_id              = module.vpc.vpc_id
-  bastion_sg_id       = module.bastion.security_group_id
+  bastion_sg_id       = module.bastion_asg.security_group_id
   private_subnet_id   = module.vpc.private_subnet_ids[0]
   key_pair_name       = module.vpc.key_pair_name
   s3_bucket           = var.s3_bucket
@@ -70,7 +70,7 @@ module "stage-env" {
   vpc_id = module.vpc.vpc_id
   public_subnet_ids  = [module.vpc.public_subnet_ids[0],module.vpc.public_subnet_ids[1]]
   private_subnet_ids = [module.vpc.private_subnet_ids[0],module.vpc.private_subnet_ids[1]]
-  bastion_sg         = module.bastion.security_group_id
+  bastion_sg         = module.bastion_asg.security_group_id
   ansible_sg         = module.ansible.security_group_id
   domain_name        = var.domain_name
   keypair            = module.vpc.key_pair_name
@@ -84,7 +84,7 @@ module "prod-env" {
   vpc_id              = module.vpc.vpc_id
   public_subnet_ids   = [module.vpc.public_subnet_ids[0],module.vpc.public_subnet_ids[1]]
   private_subnet_ids  = [module.vpc.private_subnet_ids[0],module.vpc.private_subnet_ids[1]]
-  bastion_sg          = module.bastion.security_group_id
+  bastion_sg          = module.bastion_asg.security_group_id
   ansible_sg          = module.ansible.security_group_id
   domain_name         = var.domain_name
   keypair            = module.vpc.key_pair_name

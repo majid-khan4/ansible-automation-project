@@ -4,14 +4,14 @@ variable "region" {
 
 #domain
 variable "domain_name" {
-  default     = "majiktech.uk"
+  default = "majiktech.uk"
 }
 
 variable "newrelic_api_key" {
-  default = "NRAK-RV61KHOC84AWAPUP24WCTQV9UY3"  
+  default = "NRAK-RV61KHOC84AWAPUP24WCTQV9UY3"
 }
 
 
 variable "newrelic_account_id" {
-  default     = "3947187"
+  default = "3947187"
 }

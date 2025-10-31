@@ -155,8 +155,8 @@ resource "aws_launch_template" "stage_launch_template" {
 
   # Pass user_data as base64 encoded from the local script and substitute variables dynamically
   user_data = base64encode(templatefile("${path.module}/stage-userdata.sh", {
-    NEW_RELIC_API_KEY    = var.newrelic_api_key
-    NEW_RELIC_ACCOUNT_ID = var.newrelic_account_id
+    newrelic_api_key    = var.newrelic_api_key
+    newrelic_account_id = var.newrelic_account_id
   }))
 
   vpc_security_group_ids = [aws_security_group.stage_sg.id]
