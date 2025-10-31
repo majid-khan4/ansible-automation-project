@@ -22,3 +22,7 @@ variable "s3_bucket" {
   type        = string
   default     = "m3ap-remote-state-1"
 }
+
+variable "region" {
+  default = "eu-west-2" # London region
+}

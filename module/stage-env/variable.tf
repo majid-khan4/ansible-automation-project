@@ -6,5 +6,5 @@ variable "bastion_sg" {}
 variable "ansible_sg" {}
 variable "domain_name" {}
 variable "keypair" {}
-variable "new_relic_api_key" {}
-variable "new_relic_account_id" {}
+variable "newrelic_api_key" {}
+variable "newrelic_account_id" {}

@@ -73,6 +73,7 @@ resource "aws_launch_template" "bastion_lt" {
 
   user_data = base64encode(templatefile("${path.module}/userdata.sh", {
     private_key_pem     = var.private_key_pem
+    region              = var.region
     newrelic_api_key    = var.newrelic_api_key
     newrelic_account_id = var.newrelic_account_id
   }))

@@ -4,7 +4,14 @@ variable "region" {
 
 #domain
 variable "domain_name" {
-  description = "This will be the domain name of the project"
-  type        = string
   default     = "majiktech.uk"
+}
+
+variable "newrelic_api_key" {
+  default = "NRAK-RV61KHOC84AWAPUP24WCTQV9UY3"  
+}
+
+
+variable "newrelic_account_id" {
+  default     = "3947187"
 }

@@ -152,9 +152,9 @@ resource "aws_launch_template" "prod_launch_template" {
 
   # Pass user_data as base64 encoded from the local script and substitute variables dynamically
   user_data = base64encode(templatefile("${path.module}/prod-userdata.sh", {
-    NEW_RELIC_API_KEY    = var.new_relic_api_key
-    NEW_RELIC_ACCOUNT_ID = var.new_relic_account_id
-  }))
+    NEW_RELIC_API_KEY    = var.newrelic_api_key
+    NEW_RELIC_ACCOUNT_ID = var.newrelic_account_id
+}))
 
   vpc_security_group_ids = [aws_security_group.prod_sg.id]
 

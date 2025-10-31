@@ -15,16 +15,16 @@ module "vpc" {
   private_subnet_cidrs = ["10.0.3.0/24", "10.0.4.0/24"]
 }
 
-module "bastion" {
+module "bastion_asg" {
   source = "./module/bastion-host"
-  name   = "bastion"
-  public_subnet_ids = module.vpc.public_subnet_ids
-  vpc_id            = module.vpc.vpc_id
-  key_pair_name     = module.vpc.key_pair_name
-  private_key_pem     = module.vpc.private_key_pem
+  name               = local.name
+  vpc_id             = module.vpc.vpc_id
+  public_subnet_ids  = module.vpc.public_subnet_ids
+  key_pair_name      = module.vpc.key_pair_name
+  private_key_pem    = module.vpc.private_key_pem
   newrelic_api_key    = var.newrelic_api_key
   newrelic_account_id = var.newrelic_account_id
-
+  region              = var.region
 }
 
 module "nexus" {
@@ -74,8 +74,8 @@ module "stage-env" {
   ansible_sg         = module.ansible.security_group_id
   domain_name        = var.domain_name
   keypair            = module.vpc.key_pair_name
-  new_relic_api_key  = var.newrelic_api_key
-  new_relic_account_id = var.newrelic_account_id
+  newrelic_api_key    = var.newrelic_api_key
+  newrelic_account_id = var.newrelic_account_id
 }
 
 module "prod-env" {
@@ -88,8 +88,8 @@ module "prod-env" {
   ansible_sg          = module.ansible.security_group_id
   domain_name         = var.domain_name
   keypair            = module.vpc.key_pair_name
-  new_relic_api_key    = var.newrelic_api_key
-  new_relic_account_id = var.newrelic_account_id
+  newrelic_api_key    = var.newrelic_api_key
+  newrelic_account_id = var.newrelic_account_id
 }
 
 module "database" {

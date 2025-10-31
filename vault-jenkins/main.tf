@@ -165,6 +165,8 @@ resource "aws_security_group" "jenkins_sg" {
 
 #create Jenkins EC2 instance
 
+#create Jenkins EC2 instance
+
 resource "aws_instance" "jenkins_instance" {
   ami                         = data.aws_ami.latest_rhel.id
   instance_type               = "t2.medium"
@@ -176,7 +178,9 @@ resource "aws_instance" "jenkins_instance" {
 
   # User data script for automatic Jenkins installation & configuration
   user_data = templatefile("${path.module}/jenkins-userdata.sh", {
-    region = var.region
+    region              = var.region
+    newrelic_api_key    = var.newrelic_api_key
+    newrelic_account_id = var.newrelic_account_id
   })
 
   # Root block device configuration
@@ -478,9 +482,11 @@ resource "aws_instance" "vault_server" {
   associate_public_ip_address = true
 
   user_data = templatefile("${path.module}/vault-userdata.sh", {
-    region          = var.region
-    key             = aws_kms_key.vault_kms.id
-    "VAULT_VERSION" = "1.18.3"
+    region              = var.region
+    key                 = aws_kms_key.vault_kms.id
+    VAULT_VERSION       = "1.18.3"
+    newrelic_api_key    = var.newrelic_api_key
+    newrelic_account_id = var.newrelic_account_id
   })
 
   root_block_device {

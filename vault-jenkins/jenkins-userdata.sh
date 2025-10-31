@@ -22,6 +22,7 @@ systemctl daemon-reload
 systemctl start jenkins
 systemctl enable jenkins
 systemctl start jenkins
+
 # Install trivy for container scanning
 RELEASE_VERSION=$(grep -Po '(?<=VERSION_ID=")[0-9]' /etc/os-release)
 cat << EOT | sudo tee -a /etc/yum.repos.d/trivy.repo
@@ -40,3 +41,10 @@ yum install docker-ce -y
 systemctl start docker
 systemctl enable docker
 hostnamectl set-hostname Jenkins
+
+# Install New Relic
+curl -Ls https://download.newrelic.com/install/newrelic-cli/scripts/install.sh | bash && \
+sudo NEW_RELIC_API_KEY="${newrelic_api_key}" \
+NEW_RELIC_ACCOUNT_ID="${newrelic_account_id}" \
+NEW_RELIC_REGION="EU" \
+/usr/local/bin/newrelic install -y
