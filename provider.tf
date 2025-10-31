@@ -3,6 +3,15 @@ provider "aws" {
     # profile = "personal_account"
 }
 
+provider "vault" {
+  token = "hvs.jmnPPXIlXjb2G0f2bawpEohg"
+  address = "https://vault.majiktech.uk"
+}
+
+data "vault_generic_secret" "database" {
+  path = "secret/database"
+}
+
 terraform {
   # NOTE: Temporarily disabled backend for local validation/plan. Restore this block
   # when you want Terraform to use the S3 remote state.
@@ -14,4 +23,4 @@ terraform {
     region = "eu-west-2"
     # profile = "personal_account"
   }
-} 
+}

@@ -99,6 +99,6 @@ module "database" {
   db_subnets = [module.vpc.private_subnet_ids[0], module.vpc.private_subnet_ids[1]]
   stage_sg = module.stage-env.stage_security_group_id
   prod_sg = module.prod-env.prod_security_group_id
-  db_username = "admin"
-  db_password = "admin123"
+  db_username = data.vault_generic_secret.database.data["username"]
+  db_password = data.vault_generic_secret.database.data["password"]
 }
