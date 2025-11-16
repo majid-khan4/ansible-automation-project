@@ -82,8 +82,9 @@ data "aws_ami" "latest_rhel" {
   owners      = ["309956199498"] # Red Hat official AWS account ID
 
   filter {
-    name   = "name"
-    values = ["RHEL-9.*_HVM-*-x86_64-*-Hourly2-GP2"] # Pattern for RHEL 9 AMIs
+    name = "name"
+    # Simplified pattern: looks for any RHEL 9 AMI with the HVM suffix
+    values = ["RHEL-9.*_HVM-*x86_64*"]
   }
 
   filter {
@@ -243,7 +244,7 @@ resource "aws_elb" "jenkins_elb" {
   }
 
   health_check {
-    target              = "HTTP:8080/login"
+    target              = "TCP:8080"
     interval            = 30
     healthy_threshold   = 2
     unhealthy_threshold = 2
@@ -484,7 +485,6 @@ resource "aws_instance" "vault_server" {
   user_data = templatefile("${path.module}/vault-userdata.sh", {
     region              = var.region
     key                 = aws_kms_key.vault_kms.id
-    VAULT_VERSION       = "1.18.3"
     newrelic_api_key    = var.newrelic_api_key
     newrelic_account_id = var.newrelic_account_id
   })
@@ -520,7 +520,7 @@ resource "aws_elb" "vault_elb" {
   }
 
   health_check {
-    target              = "HTTP:8200/v1/sys/health"
+    target              = "TCP:8200"
     healthy_threshold   = 2
     unhealthy_threshold = 2
     timeout             = 3

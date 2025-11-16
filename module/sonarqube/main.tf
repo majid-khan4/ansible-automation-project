@@ -113,7 +113,7 @@ resource "aws_elb" "sonarqube_elb" {
     healthy_threshold   = 2
     unhealthy_threshold = 2
     timeout             = 5
-    target              = "HTTP:9000/"
+    target              = "TCP:9000"
     interval            = 30
   }
 
@@ -162,7 +162,7 @@ data "aws_route53_zone" "my_hosted_zone" {
 
 # data block to fetch ACM certificate for sonarqube
 data "aws_acm_certificate" "name" {
-  domain   = "majiktech.uk"
+  domain   = var.domain_name
   statuses = ["ISSUED"]
   most_recent = true
 }   

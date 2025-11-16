@@ -126,13 +126,14 @@ resource "aws_lb_listener" "https" {
 }
 
 // Data: latest RHEL9 AMI
-data "aws_ami" "rhel9" {
+data "aws_ami" "latest_rhel" {
   most_recent = true
-  owners      = ["309956199498"]
+  owners      = ["309956199498"] # Red Hat official AWS account ID
 
   filter {
-    name   = "name"
-    values = ["RHEL-9.*_HVM-*-x86_64-*-Hourly2-GP2"]
+    name = "name"
+    # Simplified pattern: looks for any RHEL 9 AMI with the HVM suffix
+    values = ["RHEL-9.*_HVM-*x86_64*"]
   }
 
   filter {
@@ -149,7 +150,7 @@ data "aws_ami" "rhel9" {
 # Launch Template Configuration for EC2 Instances in Stage Env 
 resource "aws_launch_template" "stage_launch_template" {
   name_prefix   = "${var.name}-stage-tmpl"
-  image_id      = data.aws_ami.rhel9.id
+  image_id      = data.aws_ami.latest_rhel.id
   instance_type = "t2.medium"
   key_name      = var.keypair
 

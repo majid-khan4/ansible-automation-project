@@ -1,13 +1,14 @@
 
 
 // Fetch latest RHEL 9 AMI for bastion
-data "aws_ami" "rhel9" {
+data "aws_ami" "latest_rhel" {
   most_recent = true
   owners      = ["309956199498"] # Red Hat official AWS account ID
 
   filter {
-    name   = "name"
-    values = ["RHEL-9.*_HVM-*-x86_64-*-Hourly2-GP2"]
+    name = "name"
+    # Simplified pattern: looks for any RHEL 9 AMI with the HVM suffix
+    values = ["RHEL-9.*_HVM-*x86_64*"]
   }
 
   filter {
@@ -67,7 +68,7 @@ resource "aws_security_group" "bastion_sg" {
 # Launch template for ASG
 resource "aws_launch_template" "bastion_lt" {
   name_prefix   = "${var.name}-bastion_lt"
-  image_id      = data.aws_ami.rhel9.id
+  image_id      = data.aws_ami.latest_rhel.id
   instance_type = "t2.micro"
   key_name      = var.key_pair_name
 

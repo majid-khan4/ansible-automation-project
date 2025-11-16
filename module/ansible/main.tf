@@ -1,20 +1,56 @@
 // Fetch latest RHEL 9 AMI for Ansible
 
-data "aws_ami" "rhel9" {
+data "aws_ami" "latest_rhel" {
   most_recent = true
   owners      = ["309956199498"] # Red Hat official AWS account ID
+
   filter {
-    name   = "name"
-    values = ["RHEL-9.*_HVM-*-x86_64-*-Hourly2-GP2"]
+    name = "name"
+    # Simplified pattern: looks for any RHEL 9 AMI with the HVM suffix
+    values = ["RHEL-9.*_HVM-*x86_64*"]
   }
+
   filter {
     name   = "virtualization-type"
     values = ["hvm"]
   }
+
   filter {
     name   = "architecture"
     values = ["x86_64"]
   }
+}
+
+# ansible IAM Role and Instance Profile
+resource "aws_iam_role" "ansible_role" {
+  name = "${var.name}-ansible-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      },
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ansible_ec2_full" {
+  role       = aws_iam_role.ansible_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "ansible_s3_full" {
+  role       = aws_iam_role.ansible_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+}
+
+resource "aws_iam_instance_profile" "ansible_profile" {
+  name = "${var.name}-ansible-instance-profile"
+  role = aws_iam_role.ansible_role.name
 }
 
 // Security group for Ansible: allow SSH from Bastion SG, egress everywhere
@@ -43,37 +79,10 @@ resource "aws_security_group" "ansible_sg" {
   }
 }
 
-// IAM Role for Ansible EC2
-resource "aws_iam_role" "ansible_role" {
-  name = "${var.name}-ansible-role"
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [{
-      Effect = "Allow",
-      Principal = { Service = "ec2.amazonaws.com" },
-      Action = "sts:AssumeRole"
-    }]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "ansible_ec2_full" {
-  role       = aws_iam_role.ansible_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
-}
-
-resource "aws_iam_role_policy_attachment" "ansible_s3_full" {
-  role       = aws_iam_role.ansible_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
-}
-
-resource "aws_iam_instance_profile" "ansible_profile" {
-  name = "${var.name}-ansible-instance-profile"
-  role = aws_iam_role.ansible_role.name
-}
 
 // Ansible EC2 instance in private subnet
 resource "aws_instance" "ansible" {
-  ami                         = data.aws_ami.rhel9.id
+  ami                         = data.aws_ami.latest_rhel.id
   instance_type               = "t2.medium"
   subnet_id                   = var.private_subnet_id
   vpc_security_group_ids      = [aws_security_group.ansible_sg.id]
@@ -103,10 +112,19 @@ resource "aws_instance" "ansible" {
   }
 }
 
-// Null resource to copy playbooks to S3
-resource "null_resource" "copy_playbooks" {
-    count = 0
-#   provisioner "local-exec" {
-#     command = "aws s3 cp ../playbooks/ s3://${var.s3_bucket}/playbooks/ --recursive"
+# Upload Ansible scripts to S3 bucket
+resource "aws_s3_object" "stage_bash_script" {
+  bucket = var.s3_bucket
+  key = "scripts/stage_bash.sh"
+  source = "${path.module}/scripts/stage_bash.sh"
 }
-
+resource "aws_s3_object" "prod_bash_script" {
+  bucket = var.s3_bucket
+  key = "scripts/prod_bash.sh"
+  source = "${path.module}/scripts/prod_bash.sh"
+}
+resource "aws_s3_object" "deployment__yml" {
+  bucket = var.s3_bucket
+  key = "scripts/deployment.yml"
+  source = "${path.module}/scripts/deployment.yml"
+}

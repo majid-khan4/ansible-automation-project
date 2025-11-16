@@ -1,11 +1,12 @@
 // Data: latest RHEL9 AMI
-data "aws_ami" "rhel9" {
+data "aws_ami" "latest_rhel" {
   most_recent = true
-  owners      = ["309956199498"]
+  owners      = ["309956199498"] # Red Hat official AWS account ID
 
   filter {
-    name   = "name"
-    values = ["RHEL-9.*_HVM-*-x86_64-*-Hourly2-GP2"]
+    name = "name"
+    # Simplified pattern: looks for any RHEL 9 AMI with the HVM suffix
+    values = ["RHEL-9.*_HVM-*x86_64*"]
   }
 
   filter {
@@ -118,7 +119,7 @@ resource "aws_security_group" "nexus_elb_sg" {
 
 // Nexus EC2 instance (SSM-only access)
 resource "aws_instance" "nexus" {
-  ami                         = data.aws_ami.rhel9.id
+  ami                         = data.aws_ami.latest_rhel.id
   instance_type               = "t2.medium"
   subnet_id                   = var.subnet_ids[0]       
   vpc_security_group_ids      = [aws_security_group.nexus_sg.id]
@@ -150,7 +151,7 @@ resource "aws_elb" "nexus_elb" {
   }
 
   health_check {
-    target              = "HTTP:8081/"
+    target              = "TCP:8081"
     interval            = 30
     healthy_threshold   = 2
     unhealthy_threshold = 2
@@ -170,7 +171,7 @@ data "aws_route53_zone" "my_hosted_zone" {
 
 # data block to fetch ACM certificate for Nexus
 data "aws_acm_certificate" "name" {
-  domain = "majiktech.uk"
+  domain = var.domain_name
   statuses = ["ISSUED"]
 
 }

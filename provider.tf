@@ -1,11 +1,11 @@
 provider "aws" {
   region = "eu-west-2"
-    # profile = "personal_account"
+    profile = "personal_account"
 }
 
 provider "vault" {
-  token = "hvs.jmnPPXIlXjb2G0f2bawpEohg"
   address = "https://vault.majiktech.uk"
+  token   = var. vault_token
 }
 
 data "vault_generic_secret" "database" {
@@ -21,6 +21,6 @@ terraform {
     encrypt = true
     use_lockfile = true
     region = "eu-west-2"
-    # profile = "personal_account"
+    profile = "personal_account"
   }
 }

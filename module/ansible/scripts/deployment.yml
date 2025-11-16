@@ -1,0 +1,55 @@
+---
+- name: Docker Container Deployment Playbook
+  hosts: webservers
+  become: true
+  vars_files:
+    - /etc/ansible/ansible_variable.yml
+  
+  tasks:
+    - name: Stop running container
+      docker_container:
+        name: appContainer
+        state: stopped
+      ignore_errors: yes
+
+    - name: Remove stopped container
+      docker_container:
+        name: appContainer
+        state: absent
+      ignore_errors: yes
+
+    - name: Remove existing image
+      docker_image:
+        name: "{{ NEXUS_IP }}/appPetclinic"
+        tag: latest
+        state: absent
+      ignore_errors: yes
+
+    - name: Log into private Nexus registry
+      become: yes
+      become_user: ec2-user
+      docker_login:
+        registry_url: "{{ NEXUS_IP }}"
+        username: admin
+        password: admin123
+
+    - name: Pull latest image from Nexus
+      become: yes
+      become_user: ec2-user
+      docker_image:
+        name: "{{ NEXUS_IP }}/appPetclinic"
+        tag: latest
+        source: pull
+        force_source: yes
+
+    - name: Run container
+      become: yes
+      become_user: ec2-user
+      docker_container:
+        name: appContainer
+        image: "{{ NEXUS_IP }}/appPetclinic:latest"
+        state: started
+        detach: yes
+        ports:
+          - "8080:8080"
+        restart_policy: always

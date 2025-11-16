@@ -7,10 +7,10 @@ apt install -y unzip jq
 VAULT_VERSION="1.18.3"
 
 # Download Vault binary
-wget https://releases.hashicorp.com/vault/"${VAULT_VERSION}"/vault_"${VAULT_VERSION}"_linux_amd64.zip
+wget https://releases.hashicorp.com/vault/"$VAULT_VERSION"/vault_"$VAULT_VERSION"_linux_amd64.zip
 
 # Unzip the Vault binary
-unzip vault_"${VAULT_VERSION}"_linux_amd64.zip
+unzip vault_"$VAULT_VERSION"_linux_amd64.zip
 
 # Move the binary to /usr/local/bin
 sudo mv vault /usr/local/bin/
