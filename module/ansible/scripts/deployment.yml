@@ -20,7 +20,7 @@
 
     - name: Remove existing image
       docker_image:
-        name: "{{ NEXUS_IP }}/appPetclinic"
+        name: "{{ NEXUS_IP }}/apppetclinic"
         tag: latest
         state: absent
       ignore_errors: yes

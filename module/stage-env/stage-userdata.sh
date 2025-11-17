@@ -13,8 +13,18 @@ sudo dnf config-manager --add-repo=https://download.docker.com/linux/centos/dock
 # --- Install Docker and dependencies ---
 sudo dnf install -y docker-ce docker-ce-cli containerd.io
 
-# --- Start and enable Docker service ---
-sudo systemctl start docker
+# --- Configure Docker daemon for insecure registry using nexus_ip variable ---
+sudo mkdir -p /etc/docker
+
+cat <<EOF | sudo tee /etc/docker/daemon.json > /dev/null
+{
+  "insecure-registries": ["${nexus_ip}:8085"]
+}
+EOF
+
+# --- Reload systemd and restart Docker ---
+sudo systemctl daemon-reload
+sudo systemctl restart docker
 sudo systemctl enable docker
 
 # --- Add ec2-user to docker group ---

@@ -59,7 +59,7 @@ module "ansible" {
   key_pair_name       = module.vpc.key_pair_name
   s3_bucket           = var.s3_bucket
   private_key_pem     = module.vpc.private_key_pem
-  nexus_ip            = module.nexus.public_ip
+  nexus_ip            = module.nexus.nexus_ip
   newrelic_api_key    = var.newrelic_api_key
   newrelic_account_id = var.newrelic_account_id
 }
@@ -74,6 +74,7 @@ module "stage-env" {
   ansible_sg         = module.ansible.security_group_id
   domain_name        = var.domain_name
   keypair            = module.vpc.key_pair_name
+  nexus_ip           = module.nexus.nexus_ip
   newrelic_api_key    = var.newrelic_api_key
   newrelic_account_id = var.newrelic_account_id
 }
@@ -88,6 +89,7 @@ module "prod-env" {
   ansible_sg          = module.ansible.security_group_id
   domain_name         = var.domain_name
   keypair            = module.vpc.key_pair_name
+  nexus_ip           = module.nexus.nexus_ip
   newrelic_api_key    = var.newrelic_api_key
   newrelic_account_id = var.newrelic_account_id
 }
